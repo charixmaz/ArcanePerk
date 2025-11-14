@@ -1,0 +1,26 @@
+visuals:
+  # Action-bar “hologram” while perks are ACTIVE.
+  # Shows ALL active perks in one line: "No Fall 27s | Fly 10s | NV ∞"
+  show-active-actionbar: true
+  active-actionbar: "&dArcane &7» &f%perks%"
+
+  # Hologram (title) when a perk is activated
+  show-activation-title: true
+  activation-title: "&dArcane"
+  activation-subtitle: "&f%perk% &7activated"
+  activation-title-seconds: 3
+
+  # Chat messages
+  show-activation-chat: true
+  activation-chat: "&dArcane &f%perk% &7activated for &f%time%"
+
+  show-deactivation-chat: true
+  deactivation-chat: "&dArcane &f%perk% &7deactivated"
+
+  # Shown automatically when a perk EXPIRES (duration ended)
+  show-expire-chat: true
+  expire-chat: "&dArcane &f%perk% &7expired. Cooldown &f%time%"
+
+  # Shown when player tries to use perk while still on cooldown
+  show-cooldown-chat: true
+  cooldown-chat: "&dArcane &f%perk% &7cooldown &f%time%"

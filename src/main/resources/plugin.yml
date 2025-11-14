@@ -1,0 +1,88 @@
+name: ArcanePerks
+main: me.charixmaz.arcaneperks.ArcanePerks
+version: 1.1.0
+api-version: '1.21'
+author: CharixMaz
+description: Rank-based perk system with durations, cooldowns and LuckPerms.
+
+commands:
+  ap:
+    description: ArcanePerks command.
+    usage: /ap help
+    permission: arcaneperks.command.ap
+
+  fd:
+    description: Toggle Fast Digging perk.
+    usage: /fd
+
+  nv:
+    description: Toggle Night Vision perk.
+    usage: /nv
+
+  wb:
+    description: Toggle Water Breathing perk.
+    usage: /wb
+
+  strp:
+    description: Toggle Strength perk.
+    usage: /strp
+
+  flyp:
+    description: Toggle Fly perk.
+    usage: /flyp
+
+  noh:
+    description: Toggle No Hunger perk.
+    usage: /noh
+
+  kxp:
+    description: Toggle Keep XP perk.
+    usage: /kxp
+
+  kinv:
+    description: Toggle Keep Inventory perk.
+    usage: /kinv
+
+  nfd:
+    description: Toggle No Fire Damage perk.
+    usage: /nfd
+
+  nfall:
+    description: Toggle No Fall Damage perk.
+    usage: /nfall
+
+  dexp:
+    description: Toggle Double Exp perk.
+    usage: /dexp
+
+  ddrops:
+    description: Toggle Double Mob Drops perk.
+    usage: /ddrops
+
+  godm:
+    description: Toggle God perk.
+    usage: /godm
+
+  van:
+    description: Toggle Vanish perk.
+    usage: /van
+
+  mig:
+    description: Toggle Mobs Ignore perk.
+    usage: /mig
+
+  glow:
+    description: Toggle Glowing perk.
+    usage: /glow
+
+  tele:
+    description: Toggle Telekinesis perk.
+    usage: /tele
+
+  ismelt:
+    description: Toggle Instant Smelt perk.
+    usage: /ismelt
+
+permissions:
+  arcaneperks.command.ap:
+    default: op

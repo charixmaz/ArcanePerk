@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="ArcanePerks:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/ArcanePerks_jar</output-path>
+    <root id="archive" name="ArcanePerks.jar">
+      <element id="module-output" name="ArcanePerks" />
+    </root>
+  </artifact>
+</component>
