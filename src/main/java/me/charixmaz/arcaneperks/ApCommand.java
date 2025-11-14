@@ -23,7 +23,7 @@ public class ApCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
 
-        // All alias commands (fd, nv, godm, ...) toggle perks directly
+        // alias commands toggle perks
         if (!cmd.getName().equalsIgnoreCase("ap")) {
             if (!(sender instanceof Player p)) {
                 sender.sendMessage("Only players can use this.");
@@ -38,7 +38,6 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // /ap ...
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             sendHelp(sender);
             return true;
@@ -56,13 +55,14 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                 }
                 return true;
             }
+
             case "activate" -> {
                 if (!(sender instanceof Player p)) {
                     sender.sendMessage("Only players can activate perks.");
                     return true;
                 }
                 if (args.length < 2) {
-                    p.sendMessage("§7Usage: §b/ap activate <perkId>");
+                    p.sendMessage("§7Usage: §b/ap activate <perkId> [level]");
                     return true;
                 }
                 PerkType type = PerkType.byId(args[1]);
@@ -70,9 +70,25 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                     p.sendMessage("§cUnknown perk: §f" + args[1]);
                     return true;
                 }
+
+                // optional level override for haste/speed/strength
+                if (args.length >= 3 &&
+                        (type == PerkType.FAST_DIGGING || type == PerkType.SPEED || type == PerkType.STRENGTH)) {
+                    try {
+                        int level = Integer.parseInt(args[2]);
+                        if (level < 1) level = 1;
+                        if (level > 10) level = 10;
+                        perkManager.setTempLevel(p, type, level);
+                    } catch (NumberFormatException ignored) {
+                        p.sendMessage("§cLevel must be a number 1–10.");
+                        return true;
+                    }
+                }
+
                 perkManager.activate(type, p);
                 return true;
             }
+
             case "deactivate" -> {
                 if (!(sender instanceof Player p)) {
                     sender.sendMessage("Only players can deactivate perks.");
@@ -94,6 +110,7 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                 perkManager.deactivate(type, p);
                 return true;
             }
+
             case "edit" -> {
                 if (!sender.hasPermission("arcaneperks.command.ap")) {
                     sender.sendMessage("§cNo permission.");
@@ -119,6 +136,34 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                 }
                 return true;
             }
+
+            case "setlevel" -> {
+                if (!sender.hasPermission("arcaneperks.command.ap")) {
+                    sender.sendMessage("§cNo permission.");
+                    return true;
+                }
+                if (args.length < 3) {
+                    sender.sendMessage("§7Usage: §b/ap setlevel <perkId> <level>");
+                    return true;
+                }
+                PerkType type = PerkType.byId(args[1]);
+                if (type == null) {
+                    sender.sendMessage("§cUnknown perk: §f" + args[1]);
+                    return true;
+                }
+                try {
+                    int level = Integer.parseInt(args[2]);
+                    if (level < 1) level = 1;
+                    if (level > 10) level = 10;
+                    perkManager.setConfigLevel(type, level);
+                    sender.sendMessage("§dArcanePerks §7→ Set default level of §b" +
+                            type.getId() + " §7to §f" + level + "§7.");
+                } catch (NumberFormatException e) {
+                    sender.sendMessage("§cLevel must be a number 1–10.");
+                }
+                return true;
+            }
+
             case "reload" -> {
                 if (!sender.hasPermission("arcaneperks.command.ap")) {
                     sender.sendMessage("§cNo permission.");
@@ -128,6 +173,7 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage("§dArcanePerks §7config reloaded.");
                 return true;
             }
+
             default -> {
                 sendHelp(sender);
                 return true;
@@ -139,20 +185,19 @@ public class ApCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§d§lArcanePerks §7commands:");
         sender.sendMessage("§b/ap help §7- this help");
         sender.sendMessage("§b/ap list §7- list all perks and shortcuts");
-        sender.sendMessage("§b/ap activate <perkId> §7- force-activate a perk");
+        sender.sendMessage("§b/ap activate <perkId> [level] §7- activate (optional level for haste/speed/strength)");
         sender.sendMessage("§b/ap deactivate <perkId|all> §7- stop a perk or all perks");
         sender.sendMessage("§b/ap edit <perkId> <duration> <cooldown> §7- edit defaults");
+        sender.sendMessage("§b/ap setlevel <perkId> <level> §7- set default potion level");
         sender.sendMessage("§b/ap reload §7- reload config.yml");
     }
-
-    // ----- TAB COMPLETE FOR /ap -----
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         if (!cmd.getName().equalsIgnoreCase("ap")) return null;
 
         if (args.length == 1) {
-            List<String> subs = Arrays.asList("help", "list", "activate", "deactivate", "edit", "reload");
+            List<String> subs = Arrays.asList("help", "list", "activate", "deactivate", "edit", "setlevel", "reload");
             List<String> result = new ArrayList<>();
             for (String s : subs) {
                 if (s.startsWith(args[0].toLowerCase())) result.add(s);
@@ -160,21 +205,13 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             return result;
         }
 
-        if (args.length == 2 && args[0].equalsIgnoreCase("deactivate")) {
+        if (args.length == 2 &&
+                (args[0].equalsIgnoreCase("activate")
+                        || args[0].equalsIgnoreCase("deactivate")
+                        || args[0].equalsIgnoreCase("edit")
+                        || args[0].equalsIgnoreCase("setlevel"))) {
             List<String> result = new ArrayList<>();
-            result.add("all");
-            for (PerkType type : PerkType.values()) {
-                if (type.getId().startsWith(args[1].toLowerCase())) {
-                    result.add(type.getId());
-                }
-            }
-            return result;
-        }
-
-        if (args.length == 2 && (args[0].equalsIgnoreCase("activate")
-                || args[0].equalsIgnoreCase("edit"))) {
-
-            List<String> result = new ArrayList<>();
+            if (args[0].equalsIgnoreCase("deactivate")) result.add("all");
             for (PerkType type : PerkType.values()) {
                 if (type.getId().startsWith(args[1].toLowerCase())) {
                     result.add(type.getId());
@@ -193,13 +230,10 @@ public class ApCommand implements CommandExecutor, TabCompleter {
         return switch (cmd) {
             case "fd" -> PerkType.FAST_DIGGING;
             case "nv" -> PerkType.NIGHT_VISION;
-            case "wb" -> PerkType.WATER_BREATHING;
             case "strp" -> PerkType.STRENGTH;
             case "flyp" -> PerkType.FLY;
-            case "noh" -> PerkType.NO_HUNGER;
             case "kxp" -> PerkType.KEEP_XP;
             case "kinv" -> PerkType.KEEP_INVENTORY;
-            case "nfd" -> PerkType.NO_FIRE_DAMAGE;
             case "nfall" -> PerkType.NO_FALL_DAMAGE;
             case "dexp" -> PerkType.DOUBLE_EXP;
             case "ddrops" -> PerkType.DOUBLE_MOB_DROPS;
@@ -209,6 +243,7 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             case "glow" -> PerkType.GLOWING;
             case "tele" -> PerkType.TELEKINESIS;
             case "ismelt" -> PerkType.INSTANT_SMELT;
+            case "spd" -> PerkType.SPEED;
             default -> null;
         };
     }
@@ -217,13 +252,10 @@ public class ApCommand implements CommandExecutor, TabCompleter {
         return switch (type) {
             case FAST_DIGGING -> "fd";
             case NIGHT_VISION -> "nv";
-            case WATER_BREATHING -> "wb";
             case STRENGTH -> "strp";
             case FLY -> "flyp";
-            case NO_HUNGER -> "noh";
             case KEEP_XP -> "kxp";
             case KEEP_INVENTORY -> "kinv";
-            case NO_FIRE_DAMAGE -> "nfd";
             case NO_FALL_DAMAGE -> "nfall";
             case DOUBLE_EXP -> "dexp";
             case DOUBLE_MOB_DROPS -> "ddrops";
@@ -233,6 +265,7 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             case GLOWING -> "glow";
             case TELEKINESIS -> "tele";
             case INSTANT_SMELT -> "ismelt";
+            case SPEED -> "spd";
         };
     }
 }

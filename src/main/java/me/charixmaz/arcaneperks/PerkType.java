@@ -4,22 +4,20 @@ public enum PerkType {
 
     FAST_DIGGING("fastdigging", "Fast Digging"),
     NIGHT_VISION("nightvision", "Night Vision"),
-    WATER_BREATHING("waterbreathing", "Water Breathing"),
     STRENGTH("strength", "Strength"),
     FLY("fly", "Fly"),
-    NO_HUNGER("nohunger", "No Hunger"),
     KEEP_XP("keepxp", "Keep Exp"),
     KEEP_INVENTORY("keepinventory", "Keep Inventory"),
-    NO_FIRE_DAMAGE("nofiredamage", "No Fire Damage"),
-    NO_FALL_DAMAGE("nofalldamage", "No Fall Damage"),
+    NO_FALL_DAMAGE("nofalldamage", "Soft Landing"),
     DOUBLE_EXP("doubleexp", "Double Exp"),
     DOUBLE_MOB_DROPS("doublemobdrops", "Double Mob Drops"),
     GOD("god", "God Mode"),
-    VANISH("vanish", "Vanish"),
+    VANISH("vanish", "Ghost Mode"),
     MOBS_IGNORE("mobsignore", "Mobs Ignore"),
     GLOWING("glowing", "Glowing"),
     TELEKINESIS("telekinesis", "Telekinesis"),
-    INSTANT_SMELT("instantsmelt", "Instant Smelt");
+    INSTANT_SMELT("instantsmelt", "Auto Smelt"),
+    SPEED("speed", "Speed");
 
     private final String id;
     private final String displayName;

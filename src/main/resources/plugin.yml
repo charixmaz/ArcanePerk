@@ -1,13 +1,13 @@
 name: ArcanePerks
 main: me.charixmaz.arcaneperks.ArcanePerks
-version: 1.1.0
+version: 1.2.0
 api-version: '1.21'
 author: CharixMaz
 description: Rank-based perk system with durations, cooldowns and LuckPerms.
 
 commands:
   ap:
-    description: ArcanePerks command.
+    description: ArcanePerks main command.
     usage: /ap help
     permission: arcaneperks.command.ap
 
@@ -19,10 +19,6 @@ commands:
     description: Toggle Night Vision perk.
     usage: /nv
 
-  wb:
-    description: Toggle Water Breathing perk.
-    usage: /wb
-
   strp:
     description: Toggle Strength perk.
     usage: /strp
@@ -31,10 +27,6 @@ commands:
     description: Toggle Fly perk.
     usage: /flyp
 
-  noh:
-    description: Toggle No Hunger perk.
-    usage: /noh
-
   kxp:
     description: Toggle Keep XP perk.
     usage: /kxp
@@ -42,10 +34,6 @@ commands:
   kinv:
     description: Toggle Keep Inventory perk.
     usage: /kinv
-
-  nfd:
-    description: Toggle No Fire Damage perk.
-    usage: /nfd
 
   nfall:
     description: Toggle No Fall Damage perk.
@@ -83,6 +71,14 @@ commands:
     description: Toggle Instant Smelt perk.
     usage: /ismelt
 
+  spd:
+    description: Toggle Speed perk.
+    usage: /spd
+
 permissions:
   arcaneperks.command.ap:
     default: op
+
+  arcaneperks.admin.nocooldown:
+    default: op
+    description: Bypass perk cooldowns (for testing).

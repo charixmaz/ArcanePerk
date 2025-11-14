@@ -1,10 +1,128 @@
+perks:
+  fastdigging:
+    activation: TIMED
+    default:
+      duration: 30      # seconds
+      cooldown: 300     # seconds
+      level: 2          # Haste level (1–10)
+    groups:
+      peasant:
+        level: 1
+      noble:
+        level: 3
+      legend:
+        level: 5
+
+  nightvision:
+    activation: TIMED
+    default:
+      duration: -1      # infinite (∞)
+      cooldown: 0
+
+  strength:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+      level: 1          # Strength level (1–10)
+    groups:
+      noble:
+        level: 2
+      legend:
+        level: 3
+
+  fly:
+    activation: TIMED
+    default:
+      duration: 60
+      cooldown: 300
+
+  keepxp:
+    activation: TIMED
+    default:
+      duration: -1
+      cooldown: 300
+
+  keepinventory:
+    activation: TIMED
+    default:
+      duration: -1
+      cooldown: 300
+
+  nofalldamage:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+
+  doubleexp:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+
+  doublemobdrops:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+
+  god:
+    activation: TIMED
+    default:
+      duration: 15
+      cooldown: 600
+
+  vanish:
+    activation: TIMED
+    default:
+      duration: 60
+      cooldown: 300
+
+  mobsignore:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+
+  glowing:
+    activation: TIMED
+    default:
+      duration: 60
+      cooldown: 300
+
+  telekinesis:
+    activation: TIMED
+    default:
+      duration: 60
+      cooldown: 300
+
+  instantsmelt:
+    activation: TIMED
+    default:
+      duration: 60
+      cooldown: 300
+
+  speed:
+    activation: TIMED
+    default:
+      duration: 30
+      cooldown: 300
+      level: 2          # Speed level (1–10)
+    groups:
+      peasant:
+        level: 1
+      noble:
+        level: 3
+      legend:
+        level: 5
+
 visuals:
-  # Action-bar “hologram” while perks are ACTIVE.
-  # Shows ALL active perks in one line: "No Fall 27s | Fly 10s | NV ∞"
+  # All active perks stacked in one action-bar line
   show-active-actionbar: true
   active-actionbar: "&dArcane &7» &f%perks%"
 
-  # Hologram (title) when a perk is activated
+  # Title when perk is activated
   show-activation-title: true
   activation-title: "&dArcane"
   activation-subtitle: "&f%perk% &7activated"

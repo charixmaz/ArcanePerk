@@ -20,33 +20,28 @@ public class ArcanePerks extends JavaPlugin {
         saveDefaultConfig();
         this.perkManager = new PerkManager(this);
 
-        // listeners
         Bukkit.getPluginManager().registerEvents(new PerkListener(this), this);
 
-        // /ap command + tabcomplete
         ApCommand ap = new ApCommand(this);
         Objects.requireNonNull(getCommand("ap"), "Command 'ap' not defined").setExecutor(ap);
         Objects.requireNonNull(getCommand("ap")).setTabCompleter(ap);
 
-        // all alias commands -> toggle perks
         String[] aliasCommands = {
-                "fd", "nv", "wb", "strp", "flyp", "noh", "kxp", "kinv",
-                "nfd", "nfall", "dexp", "ddrops", "godm", "van", "mig",
-                "glow", "tele", "ismelt"
+                "fd", "nv", "strp", "flyp", "kxp", "kinv",
+                "nfall", "dexp", "ddrops", "godm", "van", "mig",
+                "glow", "tele", "ismelt", "spd"
         };
         for (String name : aliasCommands) {
             Objects.requireNonNull(getCommand(name), "Command '" + name + "' not defined")
                     .setExecutor(ap);
         }
 
-        // apply potion-type perks every 5 seconds
         Bukkit.getScheduler().runTaskTimer(this, () -> {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 applyPassivePotionPerks(p);
             }
         }, 20L, 20L * 5);
 
-        // tick: timers + active duration actionbar
         Bukkit.getScheduler().runTaskTimer(this, () -> perkManager.tick(), 20L, 20L);
 
         getLogger().info("ArcanePerks enabled.");
@@ -65,10 +60,9 @@ public class ArcanePerks extends JavaPlugin {
         return perkManager;
     }
 
-    // Passive potion effects – re-applied smoothly
     public void applyPassivePotionPerks(Player p) {
 
-        // FAST DIGGING – Haste level from config (1–10)
+        // FAST DIGGING – level from config / temporary override
         if (perkManager.hasPerk(p, PerkType.FAST_DIGGING)) {
             int level = perkManager.getEffectLevel(PerkType.FAST_DIGGING, p, 1);
             if (level < 1) level = 1;
@@ -76,7 +70,15 @@ public class ArcanePerks extends JavaPlugin {
                     PotionEffectType.HASTE, 20 * 12, level - 1, true, false, false));
         }
 
-        // NIGHT VISION – long effect, refreshed only when needed
+        // SPEED – level from config / temporary override
+        if (perkManager.hasPerk(p, PerkType.SPEED)) {
+            int level = perkManager.getEffectLevel(PerkType.SPEED, p, 1);
+            if (level < 1) level = 1;
+            p.addPotionEffect(new PotionEffect(
+                    PotionEffectType.SPEED, 20 * 12, level - 1, true, false, false));
+        }
+
+        // NIGHT VISION – very long effect, refreshed only when needed
         if (perkManager.hasPerk(p, PerkType.NIGHT_VISION)) {
             PotionEffect current = p.getPotionEffect(PotionEffectType.NIGHT_VISION);
             if (current == null || current.getDuration() < 20 * 30) {
@@ -85,13 +87,7 @@ public class ArcanePerks extends JavaPlugin {
             }
         }
 
-        // WATER BREATHING
-        if (perkManager.hasPerk(p, PerkType.WATER_BREATHING)) {
-            p.addPotionEffect(new PotionEffect(
-                    PotionEffectType.WATER_BREATHING, 20 * 12, 0, true, false, false));
-        }
-
-        // STRENGTH – level can also come from config (default 1)
+        // STRENGTH
         if (perkManager.hasPerk(p, PerkType.STRENGTH)) {
             int level = perkManager.getEffectLevel(PerkType.STRENGTH, p, 1);
             if (level < 1) level = 1;

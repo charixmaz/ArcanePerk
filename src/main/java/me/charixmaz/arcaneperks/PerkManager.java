@@ -23,12 +23,15 @@ public class PerkManager {
     private final Map<PerkType, Map<UUID, Long>> activeUntil = new EnumMap<>(PerkType.class);
     // perk -> (player -> cooldownUntilMillis)
     private final Map<PerkType, Map<UUID, Long>> cooldownUntil = new EnumMap<>(PerkType.class);
+    // perk -> (player -> temporary level override)
+    private final Map<PerkType, Map<UUID, Integer>> tempLevels = new EnumMap<>(PerkType.class);
 
     public PerkManager(ArcanePerks plugin) {
         this.plugin = plugin;
         for (PerkType type : PerkType.values()) {
             activeUntil.put(type, new HashMap<>());
             cooldownUntil.put(type, new HashMap<>());
+            tempLevels.put(type, new HashMap<>());
         }
     }
 
@@ -89,8 +92,12 @@ public class PerkManager {
         return cooldown;
     }
 
-    /** Level for potion-type perks (Haste, Strength). Default if absent. */
+    /** Level for potion-type perks (Haste, Speed, Strength). Default if absent. */
     public int getEffectLevel(PerkType type, Player player, int defaultLevel) {
+        Map<UUID, Integer> temp = tempLevels.get(type);
+        Integer override = temp.get(player.getUniqueId());
+        if (override != null) return override;
+
         ConfigurationSection perkSec = getPerkSection(type);
         if (perkSec == null) return defaultLevel;
 
@@ -114,9 +121,16 @@ public class PerkManager {
         return level;
     }
 
+    public void setTempLevel(Player p, PerkType type, int level) {
+        tempLevels.get(type).put(p.getUniqueId(), level);
+    }
+
+    private void clearTempLevel(UUID id, PerkType type) {
+        tempLevels.get(type).remove(id);
+    }
+
     // -------- public API --------
 
-    /** Toggle: if active -> deactivate, otherwise activate (used by shortcut commands). */
     public void toggle(PerkType type, Player player) {
         ActivationMode mode = getMode(type, player);
         if (mode == ActivationMode.ALWAYS) {
@@ -147,12 +161,16 @@ public class PerkManager {
         long duration = getDuration(type, player);
         long cooldown = getCooldown(type, player);
 
-        Map<UUID, Long> cdMap = cooldownUntil.get(type);
-        Long cdUntil = cdMap.get(player.getUniqueId());
-        if (cdUntil != null && cdUntil > now) {
-            long left = (cdUntil - now) / 1000L;
-            sendCooldownChat(player, type, left);
-            return false;
+        boolean bypassCd = player.hasPermission("arcaneperks.admin.nocooldown");
+
+        if (!bypassCd) {
+            Map<UUID, Long> cdMap = cooldownUntil.get(type);
+            Long cdUntil = cdMap.get(player.getUniqueId());
+            if (cdUntil != null && cdUntil > now) {
+                long left = (cdUntil - now) / 1000L;
+                sendCooldownChat(player, type, left);
+                return false;
+            }
         }
 
         long activeMillis;
@@ -163,11 +181,12 @@ public class PerkManager {
         }
 
         activeUntil.get(type).put(player.getUniqueId(), activeMillis);
-        cdMap.put(player.getUniqueId(), now + Math.max(0L, cooldown) * 1000L);
+
+        if (!bypassCd) {
+            cooldownUntil.get(type).put(player.getUniqueId(), now + Math.max(0L, cooldown) * 1000L);
+        }
 
         sendActivationVisuals(player, type, duration);
-
-        // immediate side effects
         applySideEffectsOnActivate(type, player);
 
         return true;
@@ -175,15 +194,17 @@ public class PerkManager {
 
     public void deactivate(PerkType type, Player player) {
         activeUntil.get(type).remove(player.getUniqueId());
+        clearTempLevel(player.getUniqueId(), type);
         sendDeactivationChat(player, type);
         applySideEffectsOnDeactivate(type, player);
     }
 
-    /** Used by /ap deactivate all */
     public void deactivateAll(Player player) {
+        UUID id = player.getUniqueId();
         for (PerkType type : PerkType.values()) {
             if (hasPerk(player, type)) {
-                activeUntil.get(type).remove(player.getUniqueId());
+                activeUntil.get(type).remove(id);
+                clearTempLevel(id, type);
                 sendDeactivationChat(player, type);
                 applySideEffectsOnDeactivate(type, player);
             }
@@ -201,16 +222,16 @@ public class PerkManager {
         if (until == null) return false;
         if (until != Long.MAX_VALUE && System.currentTimeMillis() > until) {
             map.remove(player.getUniqueId());
+            clearTempLevel(player.getUniqueId(), type);
             return false;
         }
         return true;
     }
 
-    /** Called every second: handle expiry + show action-bar durations. */
     public void tick() {
         long now = System.currentTimeMillis();
 
-        // handle expiry and send expire chat + side effects off
+        // expiry
         for (PerkType type : PerkType.values()) {
             Map<UUID, Long> map = activeUntil.get(type);
             Iterator<Map.Entry<UUID, Long>> it = map.entrySet().iterator();
@@ -219,11 +240,13 @@ public class PerkManager {
                 long until = e.getValue();
                 if (until != Long.MAX_VALUE && until < now) {
                     it.remove();
-                    Player p = Bukkit.getPlayer(e.getKey());
+                    UUID id = e.getKey();
+                    clearTempLevel(id, type);
+                    Player p = Bukkit.getPlayer(id);
                     if (p != null && p.isOnline()) {
                         long cdLeft = 0;
                         Map<UUID, Long> cdMap = cooldownUntil.get(type);
-                        Long cdUntil = cdMap.get(e.getKey());
+                        Long cdUntil = cdMap.get(id);
                         if (cdUntil != null && cdUntil > now) {
                             cdLeft = (cdUntil - now) / 1000L;
                         }
@@ -234,12 +257,12 @@ public class PerkManager {
             }
         }
 
-        // cleanup cooldown maps
+        // clean cooldowns
         for (Map<UUID, Long> map : cooldownUntil.values()) {
             map.entrySet().removeIf(e -> e.getValue() < now);
         }
 
-        // show stacked active perks above healthbar
+        // stacked active perks in action bar
         boolean showActive = plugin.getConfig().getBoolean("visuals.show-active-actionbar", true);
         String activeFormat = plugin.getConfig().getString(
                 "visuals.active-actionbar",
@@ -277,12 +300,11 @@ public class PerkManager {
         }
     }
 
-    // -------- side effects (fly, vanish, glow, potions) --------
+    // ---- side effects ----
 
     private void applySideEffectsOnActivate(PerkType type, Player p) {
         switch (type) {
             case FLY -> p.setAllowFlight(true);
-
             case VANISH -> {
                 for (Player other : Bukkit.getOnlinePlayers()) {
                     if (!other.equals(p)) {
@@ -290,17 +312,9 @@ public class PerkManager {
                     }
                 }
             }
-
             case GLOWING -> p.setGlowing(true);
-
-            case NIGHT_VISION, FAST_DIGGING, WATER_BREATHING, STRENGTH -> {
-                // apply potion immediately, not after 5s tick
-                plugin.applyPassivePotionPerks(p);
-            }
-
-            default -> {
-                // telekinesis, instantsmelt etc. are handled in listeners
-            }
+            case NIGHT_VISION, FAST_DIGGING, SPEED, STRENGTH -> plugin.applyPassivePotionPerks(p);
+            default -> {}
         }
     }
 
@@ -317,21 +331,17 @@ public class PerkManager {
                 }
             }
             case GLOWING -> p.setGlowing(false);
-
             case NIGHT_VISION -> p.removePotionEffect(PotionEffectType.NIGHT_VISION);
             case FAST_DIGGING -> p.removePotionEffect(PotionEffectType.HASTE);
-            case WATER_BREATHING -> p.removePotionEffect(PotionEffectType.WATER_BREATHING);
+            case SPEED -> p.removePotionEffect(PotionEffectType.SPEED);
             case STRENGTH -> p.removePotionEffect(PotionEffectType.STRENGTH);
-
-            default -> {
-            }
+            default -> {}
         }
     }
 
-    // -------- visuals --------
+    // ---- visuals ----
 
     private void sendActivationVisuals(Player p, PerkType type, long durationSec) {
-        // chat
         if (plugin.getConfig().getBoolean("visuals.show-activation-chat", true)) {
             String time = durationSec < 0 ? "∞" : durationSec + "s";
             String msg = plugin.getConfig().getString(
@@ -343,7 +353,6 @@ public class PerkManager {
             p.sendMessage(msg);
         }
 
-        // title hologram
         if (plugin.getConfig().getBoolean("visuals.show-activation-title", true)) {
             String title = plugin.getConfig().getString(
                             "visuals.activation-title",
@@ -411,10 +420,16 @@ public class PerkManager {
         p.sendMessage(msg);
     }
 
-    // /ap edit
+    // /ap edit and /ap setlevel
+
     public void editDefault(PerkType type, long duration, long cooldown) {
         plugin.getConfig().set("perks." + type.getId() + ".default.duration", duration);
         plugin.getConfig().set("perks." + type.getId() + ".default.cooldown", cooldown);
+        plugin.saveConfig();
+    }
+
+    public void setConfigLevel(PerkType type, int level) {
+        plugin.getConfig().set("perks." + type.getId() + ".default.level", level);
         plugin.saveConfig();
     }
 }

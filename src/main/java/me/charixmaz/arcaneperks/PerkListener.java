@@ -61,16 +61,6 @@ public class PerkListener implements Listener {
     }
 
     @EventHandler
-    public void onFoodChange(FoodLevelChangeEvent event) {
-        if (!(event.getEntity() instanceof Player p)) return;
-        if (manager.hasPerk(p, PerkType.NO_HUNGER)) {
-            event.setCancelled(true);
-            p.setFoodLevel(20);
-            p.setSaturation(20f);
-        }
-    }
-
-    @EventHandler
     public void onDeath(PlayerDeathEvent event) {
         Player p = event.getEntity();
         if (manager.hasPerk(p, PerkType.KEEP_XP)) {
@@ -93,19 +83,8 @@ public class PerkListener implements Listener {
             return;
         }
 
-        EntityDamageEvent.DamageCause cause = event.getCause();
-
-        if (manager.hasPerk(p, PerkType.NO_FIRE_DAMAGE)) {
-            if (cause == EntityDamageEvent.DamageCause.FIRE
-                    || cause == EntityDamageEvent.DamageCause.FIRE_TICK
-                    || cause == EntityDamageEvent.DamageCause.LAVA) {
-                event.setCancelled(true);
-                p.setFireTicks(0);
-            }
-        }
-
         if (manager.hasPerk(p, PerkType.NO_FALL_DAMAGE)
-                && cause == EntityDamageEvent.DamageCause.FALL) {
+                && event.getCause() == EntityDamageEvent.DamageCause.FALL) {
             event.setCancelled(true);
         }
     }
