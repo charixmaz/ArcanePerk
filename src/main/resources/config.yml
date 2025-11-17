@@ -3,15 +3,8 @@ perks:
     activation: TIMED
     default:
       duration: 30      # seconds
-      cooldown: 300     # seconds
-      level: 2          # Haste level (1–10)
-    groups:
-      peasant:
-        level: 1
-      noble:
-        level: 3
-      legend:
-        level: 5
+      cooldown: 300     # seconds if no LP cooldown perm
+      level: 2          # default haste level (1–10) if no LP level perm
 
   nightvision:
     activation: TIMED
@@ -24,12 +17,7 @@ perks:
     default:
       duration: 30
       cooldown: 300
-      level: 1          # Strength level (1–10)
-    groups:
-      noble:
-        level: 2
-      legend:
-        level: 3
+      level: 1          # default strength level (1–10)
 
   fly:
     activation: TIMED
@@ -108,14 +96,19 @@ perks:
     default:
       duration: 30
       cooldown: 300
-      level: 2          # Speed level (1–10)
-    groups:
-      peasant:
-        level: 1
-      noble:
-        level: 3
-      legend:
-        level: 5
+      level: 2          # default speed level (1–10)
+
+limits:
+  # hard caps so LP perms cannot break the server
+  speed:
+    max-level: 10
+    min-cooldown: 3
+  fastdigging:
+    max-level: 10
+    min-cooldown: 3
+  strength:
+    max-level: 10
+    min-cooldown: 3
 
 visuals:
   # All active perks stacked in one action-bar line
@@ -135,10 +128,48 @@ visuals:
   show-deactivation-chat: true
   deactivation-chat: "&dArcane &f%perk% &7deactivated"
 
-  # Shown automatically when a perk EXPIRES (duration ended)
   show-expire-chat: true
   expire-chat: "&dArcane &f%perk% &7expired. Cooldown &f%time%"
 
-  # Shown when player tries to use perk while still on cooldown
   show-cooldown-chat: true
   cooldown-chat: "&dArcane &f%perk% &7cooldown &f%time%"
+
+  sounds:
+    enabled: true
+    activate: "BLOCK_NOTE_BLOCK_PLING"
+    deactivate: "BLOCK_NOTE_BLOCK_BASS"
+    error: "BLOCK_NOTE_BLOCK_BASS"
+  particles:
+    enabled: true
+    activate: "HAPPY_VILLAGER"
+
+restrictions:
+  disabled-worlds:
+    - "lobby"
+  disable-in-gamemodes:
+    - "SPECTATOR"
+  combat:
+    disable-fly-on-damage: true
+    disable-vanish-on-damage: true
+
+logging:
+  enabled: true
+  to-console: true
+
+descriptions:
+  fastdigging: "&7Mine blocks faster (haste based on rank)."
+  nightvision: "&7Infinite night vision toggle."
+  strength: "&7Deal more damage (level based on rank)."
+  fly: "&7Temporary fly ability."
+  keepxp: "&7Keep experience on death."
+  keepinventory: "&7Keep inventory on death."
+  nofalldamage: "&7Soft landing: no fall damage while active."
+  doubleexp: "&7Double experience from kills."
+  doublemobdrops: "&7Extra mob drops."
+  god: "&7Invulnerable to damage while active."
+  vanish: "&7Invisible to other players."
+  mobsignore: "&7Mobs ignore you."
+  glowing: "&7Your body glows."
+  telekinesis: "&7Block drops go directly to your inventory."
+  instantsmelt: "&7Ores drop smelted ingots."
+  speed: "&7Run faster (speed based on rank)."

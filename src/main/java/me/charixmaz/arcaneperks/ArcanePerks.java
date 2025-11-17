@@ -12,6 +12,7 @@ public class ArcanePerks extends JavaPlugin {
 
     private static ArcanePerks instance;
     private PerkManager perkManager;
+    private PerkGui perkGui;
 
     @Override
     public void onEnable() {
@@ -19,8 +20,10 @@ public class ArcanePerks extends JavaPlugin {
 
         saveDefaultConfig();
         this.perkManager = new PerkManager(this);
+        this.perkGui = new PerkGui(this);
 
         Bukkit.getPluginManager().registerEvents(new PerkListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new GuiListener(this), this);
 
         ApCommand ap = new ApCommand(this);
         Objects.requireNonNull(getCommand("ap"), "Command 'ap' not defined").setExecutor(ap);
@@ -60,9 +63,12 @@ public class ArcanePerks extends JavaPlugin {
         return perkManager;
     }
 
+    public PerkGui getPerkGui() {
+        return perkGui;
+    }
+
     public void applyPassivePotionPerks(Player p) {
 
-        // FAST DIGGING – level from config / temporary override
         if (perkManager.hasPerk(p, PerkType.FAST_DIGGING)) {
             int level = perkManager.getEffectLevel(PerkType.FAST_DIGGING, p, 1);
             if (level < 1) level = 1;
@@ -70,7 +76,6 @@ public class ArcanePerks extends JavaPlugin {
                     PotionEffectType.HASTE, 20 * 12, level - 1, true, false, false));
         }
 
-        // SPEED – level from config / temporary override
         if (perkManager.hasPerk(p, PerkType.SPEED)) {
             int level = perkManager.getEffectLevel(PerkType.SPEED, p, 1);
             if (level < 1) level = 1;
@@ -78,7 +83,6 @@ public class ArcanePerks extends JavaPlugin {
                     PotionEffectType.SPEED, 20 * 12, level - 1, true, false, false));
         }
 
-        // NIGHT VISION – very long effect, refreshed only when needed
         if (perkManager.hasPerk(p, PerkType.NIGHT_VISION)) {
             PotionEffect current = p.getPotionEffect(PotionEffectType.NIGHT_VISION);
             if (current == null || current.getDuration() < 20 * 30) {
@@ -87,7 +91,6 @@ public class ArcanePerks extends JavaPlugin {
             }
         }
 
-        // STRENGTH
         if (perkManager.hasPerk(p, PerkType.STRENGTH)) {
             int level = perkManager.getEffectLevel(PerkType.STRENGTH, p, 1);
             if (level < 1) level = 1;
