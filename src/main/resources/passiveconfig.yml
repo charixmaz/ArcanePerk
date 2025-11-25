@@ -1,0 +1,11 @@
+swiftstep:
+  min-distance: 6.0   # blocks you must walk before speed boost
+  cooldown: 8         # seconds between boosts at level 1
+
+adrenaline:
+  threshold-hearts: 1.0   # when HP drops to <= this many hearts -> heal
+  cooldown: 45            # seconds at level 1
+
+softlanding:
+  reduction: 0.3      # 30% base damage reduction
+  cooldown: 10        # seconds at level 1

@@ -1,61 +1,317 @@
 package me.charixmaz.arcaneperks;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.title.Title;
-import org.bukkit.*;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
+import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.permissions.PermissionAttachmentInfo;
-import org.bukkit.potion.PotionEffectType;
 
-import java.time.Duration;
 import java.util.*;
 
 public class PerkManager {
 
-    private enum ActivationMode {
-        ALWAYS, TIMED
+    public enum ActivationMode {
+        ALWAYS,
+        TIMED,
+        TOGGLE
     }
 
     private final ArcanePerks plugin;
 
-    private final Map<PerkType, Map<UUID, Long>> activeUntil = new EnumMap<>(PerkType.class);
-    private final Map<PerkType, Map<UUID, Long>> cooldownUntil = new EnumMap<>(PerkType.class);
-    private final Map<PerkType, Map<UUID, Integer>> tempLevels = new EnumMap<>(PerkType.class);
+    private final EnumMap<PerkType, PerkSettings> perkSettings = new EnumMap<>(PerkType.class);
+    private final Map<UUID, EnumMap<PerkType, PerkRuntime>> states = new HashMap<>();
+    private final Map<UUID, EnumMap<PerkType, Integer>> tempLevels = new HashMap<>();
+
+    private final MiniMessage mini = MiniMessage.miniMessage();
 
     public PerkManager(ArcanePerks plugin) {
         this.plugin = plugin;
+        loadSettingsFromConfig();
+    }
+
+    // ---------------------------------------------------------------------
+    // CONFIG LOADING
+    // ---------------------------------------------------------------------
+
+    private void loadSettingsFromConfig() {
+        perkSettings.clear();
+
+        ConfigurationSection perksSection = plugin.getConfig().getConfigurationSection("perks");
+        if (perksSection == null) {
+            plugin.getLogger().warning("No 'perks' section found in config.yml");
+            return;
+        }
+
         for (PerkType type : PerkType.values()) {
-            activeUntil.put(type, new HashMap<>());
-            cooldownUntil.put(type, new HashMap<>());
-            tempLevels.put(type, new HashMap<>());
+            String id = type.getId();
+            ConfigurationSection sec = perksSection.getConfigurationSection(id);
+            if (sec == null) continue;
+
+            String modeStr = sec.getString("activation", "TIMED").toUpperCase(Locale.ROOT);
+            ActivationMode mode;
+            try {
+                mode = ActivationMode.valueOf(modeStr);
+            } catch (IllegalArgumentException ex) {
+                mode = ActivationMode.TIMED;
+            }
+
+            ConfigurationSection def = sec.getConfigurationSection("default");
+            long duration = def != null ? def.getLong("duration", 30) : 30;
+            long cooldown = def != null ? def.getLong("cooldown", 60) : 60;
+
+            perkSettings.put(type, new PerkSettings(mode, duration, cooldown));
         }
     }
 
-    // -------- config base --------
-
-    private ConfigurationSection getPerkSection(PerkType type) {
-        ConfigurationSection perksSec = plugin.getConfig().getConfigurationSection("perks");
-        if (perksSec == null) return null;
-        return perksSec.getConfigurationSection(type.getId());
+    public void reload() {
+        plugin.reloadConfig();
+        loadSettingsFromConfig();
     }
 
-    private ActivationMode getMode(PerkType type, Player player) {
-        ConfigurationSection perkSec = getPerkSection(type);
-        if (perkSec == null) return ActivationMode.TIMED;
-        String mode = perkSec.getString("activation", "TIMED");
-        return "ALWAYS".equalsIgnoreCase(mode) ? ActivationMode.ALWAYS : ActivationMode.TIMED;
+    // ---------------------------------------------------------------------
+    // INTERNAL MODELS
+    // ---------------------------------------------------------------------
+
+    private EnumMap<PerkType, PerkRuntime> getPlayerMap(UUID id) {
+        return states.computeIfAbsent(id, k -> new EnumMap<>(PerkType.class));
     }
 
-    private long getDuration(PerkType type, Player player) {
-        ConfigurationSection perkSec = getPerkSection(type);
-        if (perkSec == null) return 30;
-
-        ConfigurationSection defSec = perkSec.getConfigurationSection("default");
-        return defSec != null ? defSec.getLong("duration", 30) : 30;
+    private PerkRuntime getOrCreateState(Player p, PerkType type) {
+        EnumMap<PerkType, PerkRuntime> map = getPlayerMap(p.getUniqueId());
+        return map.computeIfAbsent(type, t -> new PerkRuntime());
     }
 
-    // -------- LuckPerms helpers --------
+    private EnumMap<PerkType, Integer> getTempLevelMap(UUID id) {
+        return tempLevels.computeIfAbsent(id, k -> new EnumMap<>(PerkType.class));
+    }
+
+    private static class PerkRuntime {
+        boolean active = false;
+        long expiresAt = -1L;
+        long cooldownUntil = 0L;
+    }
+
+    private static class PerkSettings {
+        private final ActivationMode mode;
+        private final long durationSeconds;
+        private final long cooldownSeconds;
+
+        PerkSettings(ActivationMode mode, long durationSeconds, long cooldownSeconds) {
+            this.mode = mode;
+            this.durationSeconds = durationSeconds;
+            this.cooldownSeconds = cooldownSeconds;
+        }
+
+        public ActivationMode getMode() {
+            return mode;
+        }
+
+        public long getDurationSeconds() {
+            return durationSeconds;
+        }
+
+        public long getCooldownSeconds() {
+            return cooldownSeconds;
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // PUBLIC API
+    // ---------------------------------------------------------------------
+
+    public boolean hasPerk(Player p, PerkType type) {
+        EnumMap<PerkType, PerkRuntime> map = states.get(p.getUniqueId());
+        if (map == null) return false;
+        PerkRuntime rt = map.get(type);
+        return rt != null && rt.active;
+    }
+
+    public int getEffectLevel(PerkType type, Player p, int defaultLevel) {
+        // 1) temporary override from /ap test
+        EnumMap<PerkType, Integer> tempMap = tempLevels.get(p.getUniqueId());
+        if (tempMap != null) {
+            Integer tmp = tempMap.get(type);
+            if (tmp != null && tmp >= 1) {
+                return tmp;
+            }
+        }
+
+        int level = defaultLevel;
+
+        // 2) config default
+        ConfigurationSection perks = plugin.getConfig().getConfigurationSection("perks");
+        if (perks != null) {
+            ConfigurationSection sec = perks.getConfigurationSection(type.getId());
+            if (sec != null) {
+                ConfigurationSection def = sec.getConfigurationSection("default");
+                if (def != null) {
+                    level = def.getInt("level", level);
+                }
+            }
+        }
+
+        // 3) LuckPerms override arcaneperks.<id>.<level> (max)
+        int permLevel = getMaxSuffixInt(p, (type.getPermissionNode() + ".").toLowerCase(Locale.ROOT));
+        if (permLevel > 0) level = permLevel;
+
+        // 4) limits.<id>.max-level
+        ConfigurationSection limits = plugin.getConfig().getConfigurationSection("limits");
+        if (limits != null) {
+            ConfigurationSection lsec = limits.getConfigurationSection(type.getId());
+            if (lsec != null) {
+                int max = lsec.getInt("max-level", 0);
+                if (max > 0 && level > max) level = max;
+            }
+        }
+
+        if (level < 1) level = 1;
+        return level;
+    }
+
+    public void toggle(PerkType type, Player player) {
+        PerkRuntime rt = getOrCreateState(player, type);
+        if (rt.active) {
+            deactivate(type, player);
+        } else {
+            activate(type, player, true);
+        }
+    }
+
+    public void activate(PerkType type, Player player) {
+        activate(type, player, true);
+    }
+
+    public void activate(PerkType type, Player player, boolean fromCommand) {
+        PerkSettings settings = perkSettings.get(type);
+        if (settings == null) return;
+
+        long now = System.currentTimeMillis();
+        PerkRuntime rt = getOrCreateState(player, type);
+
+        if (rt.cooldownUntil > now && settings.getMode() != ActivationMode.ALWAYS) {
+            long remaining = (rt.cooldownUntil - now) / 1000L;
+            String msg = plugin.getConfig().getString("messages.cooldown",
+                    "&cPerk on cooldown: &f<time>&cs.");
+            msg = msg.replace("<time>", String.valueOf(remaining));
+            player.sendMessage(cc(msg));
+            playError(player);
+            return;
+        }
+
+        rt.active = true;
+
+        if (settings.getMode() == ActivationMode.TIMED) {
+            long duration = getDurationSeconds(type, player, settings.getDurationSeconds());
+            rt.expiresAt = now + duration * 1000L;
+        } else {
+            rt.expiresAt = -1L;
+        }
+
+        applySideEffectsOnActivate(type, player);
+
+        playActivate(player);
+        showActivateTitle(type, player);      // hologram in center
+        sendActionBarActivated(type, player);
+    }
+
+    public void deactivate(PerkType type, Player player) {
+        PerkSettings settings = perkSettings.get(type);
+        if (settings == null) return;
+
+        PerkRuntime rt = getOrCreateState(player, type);
+        if (!rt.active) return;
+
+        rt.active = false;
+        rt.expiresAt = -1L;
+
+        long now = System.currentTimeMillis();
+        long cd = getCooldownSeconds(type, player, settings.getCooldownSeconds());
+        if (settings.getMode() != ActivationMode.ALWAYS) {
+            rt.cooldownUntil = now + cd * 1000L;
+            showCooldownStart(type, player, cd);   // chat cooldown
+        }
+
+        applySideEffectsOnDeactivate(type, player);
+
+        playDeactivate(player);
+        sendActionBarDeactivated(type, player);
+    }
+
+    public void deactivateAll(Player player) {
+        EnumMap<PerkType, PerkRuntime> map = getPlayerMap(player.getUniqueId());
+        for (PerkType type : PerkType.values()) {
+            PerkRuntime rt = map.get(type);
+            if (rt != null && rt.active) {
+                deactivate(type, player);
+            }
+        }
+    }
+
+    public void tick() {
+        long now = System.currentTimeMillis();
+
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            EnumMap<PerkType, PerkRuntime> map = states.get(p.getUniqueId());
+            if (map == null) continue;
+
+            List<String> activeLines = new ArrayList<>();
+
+            for (PerkType type : PerkType.values()) {
+                PerkRuntime rt = map.get(type);
+                if (rt == null || !rt.active) continue;
+
+                PerkSettings settings = perkSettings.get(type);
+                if (settings == null) continue;
+
+                if (settings.getMode() == ActivationMode.TIMED && rt.expiresAt > 0) {
+                    long remaining = (rt.expiresAt - now) / 1000L;
+                    if (remaining <= 0) {
+                        deactivate(type, p);
+                        continue;
+                    }
+
+                    String line = plugin.getConfig().getString("visuals.actionbar.perk-format",
+                            "<white><name> <gray>(<time>s)");
+                    line = line.replace("<name>", type.getDisplayName())
+                            .replace("<time>", String.valueOf(remaining));
+                    activeLines.add(line);
+                } else {
+                    String line = plugin.getConfig().getString("visuals.actionbar.perk-format-always",
+                            "<white><name>");
+                    line = line.replace("<name>", type.getDisplayName());
+                    activeLines.add(line);
+                }
+            }
+
+            if (!activeLines.isEmpty() &&
+                    plugin.getConfig().getBoolean("visuals.actionbar.enabled", true)) {
+                String joined = String.join("  |  ", activeLines);
+                Component comp = mini.deserialize(
+                        plugin.getConfig().getString("visuals.actionbar.prefix",
+                                "<gradient:#ff00ff:#00ffff>Arcane </gradient>")
+                                + joined
+                );
+                p.sendActionBar(comp);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // TEMP LEVELS (for /ap test)
+// ---------------------------------------------------------------------
+
+    public void setTempLevel(Player p, PerkType type, int level) {
+        EnumMap<PerkType, Integer> map = getTempLevelMap(p.getUniqueId());
+        map.put(type, level);
+    }
+
+    // ---------------------------------------------------------------------
+    // PERMISSION HELPERS
+    // ---------------------------------------------------------------------
 
     private int getMaxSuffixInt(Player p, String prefix) {
         int best = -1;
@@ -68,7 +324,8 @@ public class PerkManager {
             try {
                 int val = Integer.parseInt(suffix);
                 if (val > best) best = val;
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {
+            }
         }
         return best;
     }
@@ -84,285 +341,126 @@ public class PerkManager {
             try {
                 int val = Integer.parseInt(suffix);
                 if (best == -1 || val < best) best = val;
-            } catch (NumberFormatException ignored) {}
+            } catch (NumberFormatException ignored) {
+            }
         }
         return best;
     }
 
-    private long getCooldown(PerkType type, Player player) {
-        long cooldown = 300;
+    private long getCooldownSeconds(PerkType type, Player p, long defaultCd) {
+        long cd = defaultCd;
 
-        ConfigurationSection perkSec = getPerkSection(type);
-        if (perkSec != null) {
-            ConfigurationSection defSec = perkSec.getConfigurationSection("default");
-            if (defSec != null) {
-                cooldown = defSec.getLong("cooldown", cooldown);
-            }
-        }
+        String prefix = (type.getPermissionNode() + ".cooldown.").toLowerCase(Locale.ROOT);
+        int permCd = getMinSuffixInt(p, prefix);
+        if (permCd >= 0) cd = permCd;
 
-        String prefix = ("arcaneperks." + type.getId() + ".cooldown.").toLowerCase(Locale.ROOT);
-        int permCd = getMinSuffixInt(player, prefix);
-        if (permCd >= 0) cooldown = permCd;
-
-        // apply min-cooldown limit
-        long minCd = getMinCooldownLimit(type);
-        if (cooldown < minCd) cooldown = minCd;
-
-        return cooldown;
-    }
-
-    private long getMinCooldownLimit(PerkType type) {
         ConfigurationSection limits = plugin.getConfig().getConfigurationSection("limits");
-        if (limits == null) return 0;
-        ConfigurationSection sec = limits.getConfigurationSection(type.getId());
-        if (sec == null) return 0;
-        return sec.getLong("min-cooldown", 0);
-    }
-
-    public int getEffectLevel(PerkType type, Player player, int defaultLevel) {
-        Map<UUID, Integer> temp = tempLevels.get(type);
-        Integer override = temp.get(player.getUniqueId());
-        if (override != null) return override;
-
-        int level = defaultLevel;
-
-        ConfigurationSection perkSec = getPerkSection(type);
-        if (perkSec != null) {
-            ConfigurationSection defSec = perkSec.getConfigurationSection("default");
-            if (defSec != null) {
-                level = defSec.getInt("level", level);
+        if (limits != null) {
+            ConfigurationSection sec = limits.getConfigurationSection(type.getId());
+            if (sec != null) {
+                long min = sec.getLong("min-cooldown", 0L);
+                if (cd < min) cd = min;
             }
         }
 
-        String prefix = ("arcaneperks." + type.getId() + ".").toLowerCase(Locale.ROOT);
-        int permLevel = getMaxSuffixInt(player, prefix);
-        if (permLevel > 0) level = permLevel;
-
-        int max = getMaxLevelLimit(type);
-        if (max > 0 && level > max) level = max;
-        if (level < 1) level = 1;
-        return level;
+        if (cd < 0) cd = 0;
+        return cd;
     }
 
-    private int getMaxLevelLimit(PerkType type) {
-        ConfigurationSection limits = plugin.getConfig().getConfigurationSection("limits");
-        if (limits == null) return 0;
-        ConfigurationSection sec = limits.getConfigurationSection(type.getId());
-        if (sec == null) return 0;
-        return sec.getInt("max-level", 0);
+    private long getDurationSeconds(PerkType type, Player p, long defaultDuration) {
+        long duration = defaultDuration;
+
+        String prefix = (type.getPermissionNode() + ".duration.").toLowerCase(Locale.ROOT);
+        int permDur = getMaxSuffixInt(p, prefix);
+        if (permDur > 0) duration = permDur;
+
+        if (duration < 0) duration = 0;
+        return duration;
     }
 
-    public void setTempLevel(Player p, PerkType type, int level) {
-        tempLevels.get(type).put(p.getUniqueId(), level);
+    // ---------------------------------------------------------------------
+    // VISUALS: sounds + actionbar + titles
+    // ---------------------------------------------------------------------
+
+    private String cc(String s) {
+        return ChatColor.translateAlternateColorCodes('&', s);
     }
 
-    private void clearTempLevel(UUID id, PerkType type) {
-        tempLevels.get(type).remove(id);
-    }
-
-    // -------- restriction checks --------
-
-    private boolean isWorldDisabled(Player p) {
-        List<String> disabled = plugin.getConfig().getStringList("restrictions.disabled-worlds");
-        return disabled.stream().anyMatch(w ->
-                w.equalsIgnoreCase(p.getWorld().getName()));
-    }
-
-    private boolean isGamemodeDisabled(Player p) {
-        List<String> list = plugin.getConfig().getStringList("restrictions.disable-in-gamemodes");
-        for (String gmName : list) {
-            try {
-                GameMode gm = GameMode.valueOf(gmName.toUpperCase(Locale.ROOT));
-                if (p.getGameMode() == gm) return true;
-            } catch (IllegalArgumentException ignored) {}
-        }
-        return false;
-    }
-
-    // -------- public API --------
-
-    public void toggle(PerkType type, Player player) {
-        ActivationMode mode = getMode(type, player);
-        if (mode == ActivationMode.ALWAYS) {
-            player.sendMessage("§dArcane §7→ §f" + type.getDisplayName() + " §7is always active when you have permission.");
-            return;
-        }
-
-        if (hasPerk(player, type)) {
-            deactivate(type, player);
-        } else {
-            activate(type, player);
+    public void playActivate(Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
+        String s = plugin.getConfig().getString("visuals.sounds.activate", "BLOCK_NOTE_BLOCK_PLING");
+        try {
+            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
+            p.playSound(p.getLocation(), sound, 1.0f, 1.2f);
+        } catch (IllegalArgumentException ignored) {
         }
     }
 
-    public boolean activate(PerkType type, Player player) {
-        if (!player.hasPermission(type.getPermissionNode())) {
-            player.sendMessage("§cYou don't have this perk.");
-            playError(player);
-            return false;
-        }
-
-        if (isWorldDisabled(player) || isGamemodeDisabled(player)) {
-            player.sendMessage("§cYou cannot use Arcane perks here.");
-            playError(player);
-            return false;
-        }
-
-        ActivationMode mode = getMode(type, player);
-        if (mode == ActivationMode.ALWAYS) {
-            player.sendMessage("§dArcane §7→ §f" + type.getDisplayName() + " §7is always active.");
-            return true;
-        }
-
-        long now = System.currentTimeMillis();
-        long duration = getDuration(type, player);
-        long cooldown = getCooldown(type, player);
-
-        boolean bypassCd = player.hasPermission("arcaneperks.admin.nocooldown");
-
-        if (!bypassCd) {
-            Map<UUID, Long> cdMap = cooldownUntil.get(type);
-            Long cdUntil = cdMap.get(player.getUniqueId());
-            if (cdUntil != null && cdUntil > now) {
-                long left = (cdUntil - now) / 1000L;
-                sendCooldownChat(player, type, left);
-                playError(player);
-                log("COOLDOWN " + type.getId() + " for " + player.getName() + " (" + left + "s left)");
-                return false;
-            }
-        }
-
-        long activeMillis;
-        if (duration < 0) {
-            activeMillis = Long.MAX_VALUE;
-        } else {
-            activeMillis = now + Math.max(1L, duration) * 1000L;
-        }
-
-        activeUntil.get(type).put(player.getUniqueId(), activeMillis);
-
-        if (!bypassCd) {
-            cooldownUntil.get(type).put(player.getUniqueId(), now + Math.max(0L, cooldown) * 1000L);
-        }
-
-        sendActivationVisuals(player, type, duration);
-        applySideEffectsOnActivate(type, player);
-        playActivate(player);
-        log("ACTIVATE " + type.getId() + " for " + player.getName());
-        return true;
-    }
-
-    public void deactivate(PerkType type, Player player) {
-        activeUntil.get(type).remove(player.getUniqueId());
-        clearTempLevel(player.getUniqueId(), type);
-        sendDeactivationChat(player, type);
-        applySideEffectsOnDeactivate(type, player);
-        playDeactivate(player);
-        log("DEACTIVATE " + type.getId() + " for " + player.getName());
-    }
-
-    public void deactivateAll(Player player) {
-        UUID id = player.getUniqueId();
-        for (PerkType type : PerkType.values()) {
-            if (hasPerk(player, type)) {
-                activeUntil.get(type).remove(id);
-                clearTempLevel(id, type);
-                sendDeactivationChat(player, type);
-                applySideEffectsOnDeactivate(type, player);
-                log("DEACTIVATE ALL " + type.getId() + " for " + player.getName());
-            }
+    public void playDeactivate(Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
+        String s = plugin.getConfig().getString("visuals.sounds.deactivate", "BLOCK_NOTE_BLOCK_BASS");
+        try {
+            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
+            p.playSound(p.getLocation(), sound, 1.0f, 0.8f);
+        } catch (IllegalArgumentException ignored) {
         }
     }
 
-    public boolean hasPerk(Player player, PerkType type) {
-        if (!player.hasPermission(type.getPermissionNode())) return false;
-
-        ActivationMode mode = getMode(type, player);
-        if (mode == ActivationMode.ALWAYS) return true;
-
-        Map<UUID, Long> map = activeUntil.get(type);
-        Long until = map.get(player.getUniqueId());
-        if (until == null) return false;
-        if (until != Long.MAX_VALUE && System.currentTimeMillis() > until) {
-            map.remove(player.getUniqueId());
-            clearTempLevel(player.getUniqueId(), type);
-            return false;
-        }
-        return true;
-    }
-
-    public void tick() {
-        long now = System.currentTimeMillis();
-
-        for (PerkType type : PerkType.values()) {
-            Map<UUID, Long> map = activeUntil.get(type);
-            Iterator<Map.Entry<UUID, Long>> it = map.entrySet().iterator();
-            while (it.hasNext()) {
-                Map.Entry<UUID, Long> e = it.next();
-                long until = e.getValue();
-                if (until != Long.MAX_VALUE && until < now) {
-                    it.remove();
-                    UUID id = e.getKey();
-                    clearTempLevel(id, type);
-                    Player p = Bukkit.getPlayer(id);
-                    if (p != null && p.isOnline()) {
-                        long cdLeft = 0;
-                        Map<UUID, Long> cdMap = cooldownUntil.get(type);
-                        Long cdUntil = cdMap.get(id);
-                        if (cdUntil != null && cdUntil > now) {
-                            cdLeft = (cdUntil - now) / 1000L;
-                        }
-                        sendExpireChat(p, type, cdLeft);
-                        applySideEffectsOnDeactivate(type, p);
-                        playDeactivate(p);
-                        log("EXPIRE " + type.getId() + " for " + p.getName());
-                    }
-                }
-            }
-        }
-
-        for (Map<UUID, Long> map : cooldownUntil.values()) {
-            map.entrySet().removeIf(e -> e.getValue() < now);
-        }
-
-        boolean showActive = plugin.getConfig().getBoolean("visuals.show-active-actionbar", true);
-        String activeFormat = plugin.getConfig().getString(
-                "visuals.active-actionbar",
-                "&dArcane &7» &f%perks%");
-
-        if (!showActive) return;
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            UUID id = player.getUniqueId();
-            List<String> segments = new ArrayList<>();
-
-            for (PerkType type : PerkType.values()) {
-                Map<UUID, Long> map = activeUntil.get(type);
-                Long until = map.get(id);
-                if (until == null) continue;
-
-                String timeStr;
-                if (until == Long.MAX_VALUE) {
-                    timeStr = "∞";
-                } else {
-                    long left = (until - now) / 1000L;
-                    if (left < 0) continue;
-                    timeStr = left + "s";
-                }
-                segments.add(type.getDisplayName() + " " + timeStr);
-            }
-
-            if (!segments.isEmpty()) {
-                String list = String.join(" §7| §f", segments);
-                String msg = activeFormat
-                        .replace("&", "§")
-                        .replace("%perks%", list);
-                player.sendActionBar(Component.text(msg));
-            }
+    public void playError(Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
+        String s = plugin.getConfig().getString("visuals.sounds.error", "BLOCK_NOTE_BLOCK_BASS");
+        try {
+            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
+            p.playSound(p.getLocation(), sound, 1.0f, 0.5f);
+        } catch (IllegalArgumentException ignored) {
         }
     }
 
-    // ---- side effects ----
+    private void sendActionBarActivated(PerkType type, Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.actionbar.show-activation", true)) return;
+        String fmt = plugin.getConfig().getString("visuals.actionbar.activated-format",
+                "<green>Arcane <name> activated");
+        fmt = fmt.replace("<name>", type.getDisplayName());
+        p.sendActionBar(mini.deserialize(fmt));
+    }
+
+    private void sendActionBarDeactivated(PerkType type, Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.actionbar.show-deactivation", true)) return;
+        String fmt = plugin.getConfig().getString("visuals.actionbar.deactivated-format",
+                "<red>Arcane <name> deactivated");
+        fmt = fmt.replace("<name>", type.getDisplayName());
+        p.sendActionBar(mini.deserialize(fmt));
+    }
+
+    private void showActivateTitle(PerkType type, Player p) {
+        if (!plugin.getConfig().getBoolean("visuals.title.enabled", true)) return;
+
+        String title = plugin.getConfig().getString(
+                "visuals.title.activate.title", "&d&lArcane");
+        String subtitle = plugin.getConfig().getString(
+                "visuals.title.activate.subtitle", "&f<name> &7activated");
+
+        title = cc(title.replace("<name>", type.getDisplayName()));
+        subtitle = cc(subtitle.replace("<name>", type.getDisplayName()));
+
+        p.sendTitle(title, subtitle, 5, 60, 10);
+    }
+
+    private void showCooldownStart(PerkType type, Player p, long cooldownSeconds) {
+        if (!plugin.getConfig().getBoolean("messages.cooldown-start.enabled", true)) return;
+
+        String msg = plugin.getConfig().getString(
+                "messages.cooldown-start.text",
+                "&dArcane &b<name>&7 cooldown: &b<time>&7s."
+        );
+        msg = msg.replace("<name>", type.getDisplayName())
+                .replace("<time>", String.valueOf(cooldownSeconds));
+        p.sendMessage(cc(msg));
+    }
+
+    // ---------------------------------------------------------------------
+    // SIDE EFFECTS (fly, vanish, glow)
+// ---------------------------------------------------------------------
 
     private void applySideEffectsOnActivate(PerkType type, Player p) {
         switch (type) {
@@ -375,8 +473,10 @@ public class PerkManager {
                 }
             }
             case GLOWING -> p.setGlowing(true);
-            case NIGHT_VISION, FAST_DIGGING, SPEED, STRENGTH -> plugin.applyPassivePotionPerks(p);
-            default -> {}
+            case NIGHT_VISION, FAST_DIGGING, SPEED, STRENGTH ->
+                    plugin.applyPassivePotionPerks(p);
+            default -> {
+            }
         }
     }
 
@@ -393,147 +493,8 @@ public class PerkManager {
                 }
             }
             case GLOWING -> p.setGlowing(false);
-            case NIGHT_VISION -> p.removePotionEffect(PotionEffectType.NIGHT_VISION);
-            case FAST_DIGGING -> p.removePotionEffect(PotionEffectType.HASTE);
-            case SPEED -> p.removePotionEffect(PotionEffectType.SPEED);
-            case STRENGTH -> p.removePotionEffect(PotionEffectType.STRENGTH);
-            default -> {}
+            default -> {
+            }
         }
-    }
-
-    // ---- visuals, sounds, logging ----
-
-    private void sendActivationVisuals(Player p, PerkType type, long durationSec) {
-        if (plugin.getConfig().getBoolean("visuals.show-activation-chat", true)) {
-            String time = durationSec < 0 ? "∞" : durationSec + "s";
-            String msg = plugin.getConfig().getString(
-                            "visuals.activation-chat",
-                            "&dArcane &f%perk% &7activated for &f%time%")
-                    .replace("&", "§")
-                    .replace("%perk%", type.getDisplayName())
-                    .replace("%time%", time);
-            p.sendMessage(msg);
-        }
-
-        if (plugin.getConfig().getBoolean("visuals.show-activation-title", true)) {
-            String title = plugin.getConfig().getString(
-                            "visuals.activation-title",
-                            "&dArcane")
-                    .replace("&", "§")
-                    .replace("%perk%", type.getDisplayName());
-            String subtitle = plugin.getConfig().getString(
-                            "visuals.activation-subtitle",
-                            "&f%perk% &7activated")
-                    .replace("&", "§")
-                    .replace("%perk%", type.getDisplayName());
-
-            int staySec = plugin.getConfig().getInt("visuals.activation-title-seconds", 3);
-
-            Title t = Title.title(
-                    Component.text(title),
-                    Component.text(subtitle),
-                    Title.Times.times(
-                            Duration.ofMillis(150),
-                            Duration.ofSeconds(staySec),
-                            Duration.ofMillis(150)
-                    )
-            );
-            p.showTitle(t);
-        }
-
-        if (plugin.getConfig().getBoolean("visuals.particles.enabled", true)) {
-            String typeName = plugin.getConfig().getString("visuals.particles.activate", "HAPPY_VILLAGER");
-            try {
-                Particle particle = Particle.valueOf(typeName.toUpperCase(Locale.ROOT));
-                p.getWorld().spawnParticle(particle,
-                        p.getLocation().add(0, 1.2, 0),
-                        10, 0.3, 0.3, 0.3, 0.01);
-            } catch (IllegalArgumentException ignored) {}
-        }
-    }
-
-    private void sendDeactivationChat(Player p, PerkType type) {
-        if (!plugin.getConfig().getBoolean("visuals.show-deactivation-chat", true)) return;
-
-        String msg = plugin.getConfig().getString(
-                        "visuals.deactivation-chat",
-                        "&dArcane &f%perk% &7deactivated")
-                .replace("&", "§")
-                .replace("%perk%", type.getDisplayName());
-
-        p.sendMessage(msg);
-    }
-
-    private void sendExpireChat(Player p, PerkType type, long cdLeft) {
-        if (!plugin.getConfig().getBoolean("visuals.show-expire-chat", true)) return;
-
-        String time = cdLeft > 0 ? cdLeft + "s" : "0s";
-        String msg = plugin.getConfig().getString(
-                        "visuals.expire-chat",
-                        "&dArcane &f%perk% &7expired. Cooldown &f%time%")
-                .replace("&", "§")
-                .replace("%perk%", type.getDisplayName())
-                .replace("%time%", time);
-
-        p.sendMessage(msg);
-    }
-
-    private void sendCooldownChat(Player p, PerkType type, long secondsLeft) {
-        if (!plugin.getConfig().getBoolean("visuals.show-cooldown-chat", true)) return;
-
-        String time = secondsLeft + "s";
-        String msg = plugin.getConfig().getString(
-                        "visuals.cooldown-chat",
-                        "&dArcane &f%perk% &7cooldown &f%time%")
-                .replace("&", "§")
-                .replace("%perk%", type.getDisplayName())
-                .replace("%time%", time);
-
-        p.sendMessage(msg);
-    }
-
-    private void log(String message) {
-        if (!plugin.getConfig().getBoolean("logging.enabled", true)) return;
-        if (plugin.getConfig().getBoolean("logging.to-console", true)) {
-            plugin.getLogger().info(message);
-        }
-    }
-
-    public void playActivate(Player p) {
-        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
-        String s = plugin.getConfig().getString("visuals.sounds.activate", "BLOCK_NOTE_BLOCK_PLING");
-        try {
-            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
-            p.playSound(p.getLocation(), sound, 1.0f, 1.2f);
-        } catch (IllegalArgumentException ignored) {}
-    }
-
-    public void playDeactivate(Player p) {
-        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
-        String s = plugin.getConfig().getString("visuals.sounds.deactivate", "BLOCK_NOTE_BLOCK_BASS");
-        try {
-            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
-            p.playSound(p.getLocation(), sound, 1.0f, 0.8f);
-        } catch (IllegalArgumentException ignored) {}
-    }
-
-    public void playError(Player p) {
-        if (!plugin.getConfig().getBoolean("visuals.sounds.enabled", true)) return;
-        String s = plugin.getConfig().getString("visuals.sounds.error", "BLOCK_NOTE_BLOCK_BASS");
-        try {
-            Sound sound = Sound.valueOf(s.toUpperCase(Locale.ROOT));
-            p.playSound(p.getLocation(), sound, 1.0f, 0.5f);
-        } catch (IllegalArgumentException ignored) {}
-    }
-
-    public void editDefault(PerkType type, long duration, long cooldown) {
-        plugin.getConfig().set("perks." + type.getId() + ".default.duration", duration);
-        plugin.getConfig().set("perks." + type.getId() + ".default.cooldown", cooldown);
-        plugin.saveConfig();
-    }
-
-    public void setConfigLevel(PerkType type, int level) {
-        plugin.getConfig().set("perks." + type.getId() + ".default.level", level);
-        plugin.saveConfig();
     }
 }

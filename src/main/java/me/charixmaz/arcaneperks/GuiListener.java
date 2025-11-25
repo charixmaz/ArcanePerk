@@ -15,6 +15,7 @@ public class GuiListener implements Listener {
         this.plugin = plugin;
     }
 
+
     @EventHandler
     public void onClick(InventoryClickEvent event) {
         if (event.getView().getTitle() == null) return;
@@ -22,6 +23,7 @@ public class GuiListener implements Listener {
                 .equals(ChatColor.stripColor(PerkGui.GUI_TITLE))) {
             return;
         }
+
 
         event.setCancelled(true);
 

@@ -134,11 +134,22 @@ visuals:
   show-cooldown-chat: true
   cooldown-chat: "&dArcane &f%perk% &7cooldown &f%time%"
 
+actionbar:
+  enabled: true
+  show-activation: true
+  show-deactivation: true
+  prefix: "<gray>Arcane: "
+  perk-format: "<name> (<time>)"
+  perk-format-always: "<name>"
+  activated-format: "<green>Arcane <name> activated"
+  deactivated-format: "<red>Arcane <name> deactivated"
+
+
   sounds:
     enabled: true
-    activate: "BLOCK_NOTE_BLOCK_PLING"
-    deactivate: "BLOCK_NOTE_BLOCK_BASS"
-    error: "BLOCK_NOTE_BLOCK_BASS"
+    activate: "minecraft:block.note_block.pling"
+    deactivate: "minecraft:block.note_block.bass"
+    error: "minecraft:block.note_block.bass"
   particles:
     enabled: true
     activate: "HAPPY_VILLAGER"
