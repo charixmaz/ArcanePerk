@@ -52,8 +52,6 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-
-
         String sub = args[0].toLowerCase();
 
         switch (sub) {
@@ -152,15 +150,6 @@ public class ApCommand implements CommandExecutor, TabCompleter {
                         + " set to " + level + ".");
                 return true;
             }
-            case "passive" -> {
-                if (!(sender instanceof Player p)) {
-                    sender.sendMessage(ChatColor.RED + "Only players can open passive GUI.");
-                    return true;
-                }
-                plugin.getPassiveGui().openRoot(p);
-                return true;
-            }
-
 
             default -> {
                 sendHelp(sender);
@@ -177,9 +166,6 @@ public class ApCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.GRAY + "/ap deactivate <perkId|all>");
         sender.sendMessage(ChatColor.GRAY + "/ap reload");
         sender.sendMessage(ChatColor.GRAY + "/ap test <perkId> <level>");
-        sender.sendMessage(ChatColor.GRAY + "/ap passive" + ChatColor.DARK_GRAY + " - " +
-                           ChatColor.WHITE + "Open passive perks (anatomy) GUI");
-
     }
 
     private PerkType aliasToPerk(String cmdName) {
@@ -212,7 +198,6 @@ public class ApCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
 
-
         if (args.length == 1) {
             List<String> base = Arrays.asList("gui", "activate", "deactivate", "reload", "test");
             List<String> result = new ArrayList<>();
@@ -241,6 +226,4 @@ public class ApCommand implements CommandExecutor, TabCompleter {
 
         return List.of();
     }
-    List<String> base = Arrays.asList("gui", "passive", "activate", "deactivate", "reload", "test");
-
 }
