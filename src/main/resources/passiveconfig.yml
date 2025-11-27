@@ -1,11 +1,31 @@
+eaglesight:
+  radius: 12.0
+  glow-ticks: 40
+  cooldown: 15
+  message: "&dArcane &7> &fYour &nEagle Sight&f sharpens."
+
+sixthsense:
+  cooldown: 8
+  message: "&dArcane &7> &fYou feel something watching you..."
+
+criticalmind:
+  base-chance: 0.05     # 5% at level 1
+  per-level: 0.02       # +2% per level
+  max-chance: 0.40      # 40% cap
+
+nightinstinct:
+  light-level: 7        # trigger when light <= 7
+  duration: 10          # seconds base
+
+focus:
+  base-multiplier: 0.05   # +5% arrow speed at level 1
+  per-level: 0.02         # +2% per level
+  max-multiplier: 0.50    # max +50% speed
 swiftstep:
-  min-distance: 6.0   # blocks you must walk before speed boost
-  cooldown: 8         # seconds between boosts at level 1
-
-adrenaline:
-  threshold-hearts: 1.0   # when HP drops to <= this many hearts -> heal
-  cooldown: 45            # seconds at level 1
-
-softlanding:
-  reduction: 0.3      # 30% base damage reduction
-  cooldown: 10        # seconds at level 1
+  levels:
+    1:
+      min-distance: 6.0
+      cooldown: 8
+    2:
+      min-distance: 5.5
+      cooldown: 7

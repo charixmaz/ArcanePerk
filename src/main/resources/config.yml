@@ -184,3 +184,23 @@ descriptions:
   telekinesis: "&7Block drops go directly to your inventory."
   instantsmelt: "&7Ores drop smelted ingots."
   speed: "&7Run faster (speed based on rank)."
+
+  unlocks:
+    arcane:
+      fastdigging:
+        xp: 50
+        money: 1000
+      speed:
+        xp: 70
+        money: 1500
+      # etc…
+
+    passive:
+      swiftstep:
+        xp: 40
+        money: 800
+      eaglesight:
+        xp: 60
+        money: 1200
+      # etc…
+

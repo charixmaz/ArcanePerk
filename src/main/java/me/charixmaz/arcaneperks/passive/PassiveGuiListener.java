@@ -2,14 +2,11 @@ package me.charixmaz.arcaneperks.passive;
 
 import me.charixmaz.arcaneperks.ArcanePerks;
 import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.InventoryHolder;
-import org.bukkit.inventory.ItemStack;
 
 public class PassiveGuiListener implements Listener {
 
@@ -19,56 +16,77 @@ public class PassiveGuiListener implements Listener {
         this.plugin = plugin;
     }
 
-    private String cc(String s) {
+    private String color(String s) {
         return ChatColor.translateAlternateColorCodes('&', s);
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler
     public void onClick(InventoryClickEvent e) {
-        InventoryHolder holder = e.getInventory().getHolder();
-        if (!(holder instanceof PassiveGuiHolder guiHolder)) return;
+        if (!(e.getWhoClicked() instanceof Player p)) return;
+        if (!(e.getInventory().getHolder() instanceof PassiveGuiHolder holder)) return;
 
-        e.setCancelled(true); // prevent taking items
+        e.setCancelled(true);
 
-        HumanEntity who = e.getWhoClicked();
-        if (!(who instanceof Player p)) return;
-
-        ItemStack clicked = e.getCurrentItem();
-        if (clicked == null || clicked.getType() == Material.AIR) return;
-
-        switch (guiHolder.getType()) {
-            case ROOT -> handleRootClick(guiHolder, p, clicked, e.getSlot());
-            case CATEGORY -> handleCategoryClick(guiHolder, p, clicked, e.getSlot());
-        }
-    }
-
-    private void handleRootClick(PassiveGuiHolder holder, Player p, ItemStack clicked, int slot) {
-        // Open category based on slot
+        PassivePerkManager manager = plugin.getPassivePerkManager();
         PassiveGui gui = plugin.getPassiveGui();
 
-        if (slot == 10) {
-            gui.openCategory(p, PassiveCategory.HEAD);
-        } else if (slot == 12) {
-            gui.openCategory(p, PassiveCategory.TORSO);
-        } else if (slot == 14) {
-            gui.openCategory(p, PassiveCategory.LEGS);
-        } else if (slot == 16) {
-            gui.openCategory(p, PassiveCategory.FEET);
-        }
-    }
-
-    private void handleCategoryClick(PassiveGuiHolder holder, Player p, ItemStack clicked, int slot) {
-        PassiveCategory cat = holder.getCategory();
-        PassiveGui gui = plugin.getPassiveGui();
-
-        // Back button
-        if (clicked.getType() == Material.ARROW && slot == 18) {
-            gui.openRoot(p);
+        // ROOT: open category GUI
+        if (holder.getType() == PassiveGuiHolder.GuiType.ROOT) {
+            switch (e.getRawSlot()) {
+                case 10 -> gui.openCategory(p, PassiveCategory.HEAD);
+                case 12 -> gui.openCategory(p, PassiveCategory.TORSO);
+                case 14 -> gui.openCategory(p, PassiveCategory.LEGS);
+                case 16 -> gui.openCategory(p, PassiveCategory.FEET);
+            }
             return;
         }
 
-        // For now, clicking perks does nothing functional
-        // (unlock system later). We only show tooltip.
-        p.sendMessage(cc("&dArcane &7> &fThis passive is managed by LuckPerms permissions."));
+        // CATEGORY: toggle perk
+        if (holder.getType() == PassiveGuiHolder.GuiType.CATEGORY) {
+            PassiveCategory cat = holder.getCategory();
+            if (cat == null) return;
+
+            PassivePerkType target = null;
+
+            // slot → perk mapping (same as in PassiveGui)
+            switch (cat) {
+                case HEAD -> {
+                    if (e.getRawSlot() == 10) target = PassivePerkType.EAGLE_SIGHT;
+                    if (e.getRawSlot() == 12) target = PassivePerkType.SIXTH_SENSE;
+                    if (e.getRawSlot() == 14) target = PassivePerkType.CRITICAL_MIND;
+                    if (e.getRawSlot() == 16) target = PassivePerkType.FOCUS;
+                }
+                case TORSO -> {
+                    if (e.getRawSlot() == 10) target = PassivePerkType.ADRENALINE;
+                    if (e.getRawSlot() == 12) target = PassivePerkType.IRON_SKIN;
+                    if (e.getRawSlot() == 14) target = PassivePerkType.FIRE_HEART;
+                    if (e.getRawSlot() == 16) target = PassivePerkType.METABOLIC_RECOVERY;
+                }
+                case LEGS -> {
+                    if (e.getRawSlot() == 10) target = PassivePerkType.SOFT_LANDING;
+                    if (e.getRawSlot() == 12) target = PassivePerkType.CLIMBERS_GRIP;
+                    if (e.getRawSlot() == 14) target = PassivePerkType.MOMENTUM;
+                    if (e.getRawSlot() == 16) target = PassivePerkType.STEP_ASSIST;
+                }
+                case FEET -> {
+                    if (e.getRawSlot() == 10) target = PassivePerkType.SWIFT_SPEED;
+                    if (e.getRawSlot() == 12) target = PassivePerkType.SILENT_STEPS;
+                    if (e.getRawSlot() == 14) target = PassivePerkType.PATHFINDER;
+                    if (e.getRawSlot() == 16) target = PassivePerkType.PREDATORS_TREAD;
+                }
+            }
+
+            if (target == null) return;
+
+            boolean enabled = manager.isEnabled(p, target);
+            manager.setEnabled(p, target, !enabled);
+
+            p.sendMessage(color("&5Arcane &7» " +
+                    (enabled ? "&cDisabled " : "&aEnabled ") +
+                    target.getDisplayName()));
+
+            // refresh item
+            plugin.getPassiveGui().openCategory(p, cat);
+        }
     }
 }

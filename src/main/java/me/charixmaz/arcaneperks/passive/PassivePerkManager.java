@@ -5,13 +5,17 @@ import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.permissions.PermissionAttachmentInfo;
-
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 public class PassivePerkManager {
@@ -22,11 +26,16 @@ public class PassivePerkManager {
     private File passiveConfigFile;
     private FileConfiguration passiveConfig;
 
-    // for SwiftStep – last position + last trigger time per player
+    // Movement perks state
     private final Map<UUID, SwiftData> swiftData = new HashMap<>();
-    // cooldown for Adrenaline and SoftLanding
     private final Map<UUID, Long> adrenalineCooldown = new HashMap<>();
     private final Map<UUID, Long> softCooldown = new HashMap<>();
+
+    // NEW head perks state
+    private final Map<UUID, Long> eagleCooldown = new HashMap<>();
+    private final Map<UUID, Long> sixthCooldown = new HashMap<>();
+
+    private final Random random = new Random();
 
     public PassivePerkManager(ArcanePerks plugin) {
         this.plugin = plugin;
@@ -45,11 +54,10 @@ public class PassivePerkManager {
         passiveConfigFile = new File(plugin.getDataFolder(), "passiveconfig.yml");
 
         if (!passiveConfigFile.exists()) {
-            // copy default from jar if present
             try {
                 plugin.saveResource("passiveconfig.yml", false);
             } catch (IllegalArgumentException ignored) {
-                // no default in jar; will create empty file in memory
+                // no default in jar – fine
             }
         }
 
@@ -64,7 +72,7 @@ public class PassivePerkManager {
     // CONFIG HELPERS
     // ---------------------------------------------------------------
 
-    public ConfigurationSection section(String id) {
+    private ConfigurationSection section(String id) {
         if (passiveConfig == null) return null;
         return passiveConfig.getConfigurationSection(id);
     }
@@ -77,6 +85,11 @@ public class PassivePerkManager {
     public double getDouble(String id, String path, double def) {
         ConfigurationSection sec = section(id);
         return sec != null ? sec.getDouble(path, def) : def;
+    }
+
+    public String getString(String id, String path, String def) {
+        ConfigurationSection sec = section(id);
+        return sec != null ? sec.getString(path, def) : def;
     }
 
     // ---------------------------------------------------------------
@@ -101,16 +114,41 @@ public class PassivePerkManager {
         return best;
     }
 
+    // ---------------------------------------------------------------
+    // SIMPLE HAS-XXX HELPERS (used by GUI / listeners)
+    // ---------------------------------------------------------------
+
     public boolean hasSwiftStep(Player p) {
         return p.hasPermission(PassivePerkType.SWIFT_STEP.getPermPrefix());
     }
 
     public boolean hasAdrenaline(Player p) {
-        return p.hasPermission(PassivePerkType.ADRENALINE.getPermPrefix());
+        return p.hasPermission(PassivePerkType.ADRENALINE.getMaxLevel());
     }
 
     public boolean hasSoftLanding(Player p) {
         return p.hasPermission(PassivePerkType.SOFT_LANDING.getPermPrefix());
+    }
+
+    // head perks
+    public boolean hasEagleSight(Player p) {
+        return p.hasPermission(PassivePerkType.EAGLE_SIGHT.getPermPrefix());
+    }
+
+    public boolean hasSixthSense(Player p) {
+        return p.hasPermission(PassivePerkType.SIXTH_SENSE.getPermPrefix());
+    }
+
+    public boolean hasCriticalMind(Player p) {
+        return p.hasPermission(PassivePerkType.CRITICAL_MIND.getPermPrefix());
+    }
+
+    public boolean hasNightInstinct(Player p) {
+        return p.hasPermission(PassivePerkType.NIGHT_INSTINCT.getPermPrefix());
+    }
+
+    public boolean hasFocus(Player p) {
+        return p.hasPermission(PassivePerkType.FOCUS.getPermPrefix());
     }
 
     // ---------------------------------------------------------------
@@ -118,7 +156,10 @@ public class PassivePerkManager {
     // ---------------------------------------------------------------
 
     public SwiftData getSwiftData(Player p) {
-        return swiftData.computeIfAbsent(p.getUniqueId(), u -> new SwiftData(p.getLocation(), 0L));
+        return swiftData.computeIfAbsent(
+                p.getUniqueId(),
+                u -> new SwiftData(p.getLocation(), System.currentTimeMillis())
+        );
     }
 
     public void recordSwiftTrigger(Player p) {
@@ -127,19 +168,17 @@ public class PassivePerkManager {
         data.setLastTrigger(System.currentTimeMillis());
     }
 
-    /** cooldown in ms, from passiveconfig.yml: swiftstep.cooldown */
-    public long getSwiftCooldownMs(Player p) {
-        int lvl = getLevel(p, PassivePerkType.SWIFT_STEP, 1);
-        long base = (long) getDouble("swiftstep", "cooldown", 10); // seconds
-        long cd = Math.max(1, base - (lvl - 1));                  // higher level = shorter cd
-        return cd * 1000L;
-    }
-
-    /** distance in blocks, from passiveconfig.yml: swiftstep.min-distance */
     public double getSwiftDistance(Player p) {
         int lvl = getLevel(p, PassivePerkType.SWIFT_STEP, 1);
         double base = getDouble("swiftstep", "min-distance", 6.0);
         return Math.max(1.0, base - (lvl - 1));
+    }
+
+    public long getSwiftCooldownMs(Player p) {
+        int lvl = getLevel(p, PassivePerkType.SWIFT_STEP, 1);
+        long base = (long) getDouble("swiftstep", "cooldown", 8); // seconds
+        long cd = Math.max(1, base - (lvl - 1));
+        return cd * 1000L;
     }
 
     // ---------------------------------------------------------------
@@ -152,23 +191,20 @@ public class PassivePerkManager {
         return now >= until;
     }
 
-    /** threshold in hearts (not HP), from passiveconfig.yml: adrenaline.threshold-hearts */
     public double getAdrenalineThresholdHearts() {
-        return getDouble("adrenaline", "threshold-hearts", 1.0); // default 1 heart
+        return getDouble("adrenaline", "threshold-hearts", 1.0);
     }
 
     public void triggerAdrenaline(Player p) {
         int lvl = getLevel(p, PassivePerkType.ADRENALINE, 1);
 
-        // heal scaling by level (max ~4 hearts)
-        int hearts = Math.min(8, lvl / 2 + 1); // 1,1,2,2,3,3,... up to 4 hearts
+        int hearts = Math.min(8, lvl / 2 + 1);
         double heal = hearts * 2.0;
 
         double max = p.getHealthScale() > 0 ? p.getHealthScale() : 20.0;
         double newHealth = Math.min(max, p.getHealth() + heal);
         p.setHealth(newHealth);
 
-        // visual + audio feedback
         p.getWorld().spawnParticle(
                 org.bukkit.Particle.HEART,
                 p.getLocation().add(0, 1.0, 0),
@@ -179,7 +215,7 @@ public class PassivePerkManager {
         p.playSound(p.getLocation(), Sound.ITEM_TOTEM_USE, 1.0f, 1.0f);
         p.sendTitle("§6Adrenaline!", "§eYou recovered health!", 5, 40, 5);
 
-        long base = (long) getDouble("adrenaline", "cooldown", 45); // seconds
+        long base = (long) getDouble("adrenaline", "cooldown", 45);
         long cd = Math.max(5, base - (lvl - 1) * 2L);
         adrenalineCooldown.put(p.getUniqueId(), System.currentTimeMillis() + cd * 1000L);
     }
@@ -194,21 +230,16 @@ public class PassivePerkManager {
         return now >= until;
     }
 
-    /** damage reduction factor from passiveconfig.yml: softlanding.reduction (0.3 = 30%) */
-    public double getSoftLandingReductionBase() {
-        return getDouble("softlanding", "reduction", 0.3);
-    }
-
     public double applySoftLanding(Player p, double originalDamage) {
         int lvl = getLevel(p, PassivePerkType.SOFT_LANDING, 1);
-        double reduction = getSoftLandingReductionBase(); // 0.3 default
-        double factor = Math.max(0.0, 1.0 - reduction - (lvl - 1) * 0.03);
+        double reductionBase = getDouble("softlanding", "reduction", 0.5); // 50% default
+        double factor = Math.max(0.1, 1.0 - reductionBase - (lvl - 1) * 0.05);
         double newDamage = originalDamage * factor;
 
-        // feedback
         p.playSound(p.getLocation(), Sound.BLOCK_SLIME_BLOCK_FALL, 1.0f, 1.4f);
         p.spawnParticle(org.bukkit.Particle.CLOUD,
-                p.getLocation(), 12, 0.4, 0.2, 0.4, 0.0);
+                p.getLocation(), 16, 0.5, 0.3, 0.5, 0.0);
+        p.sendTitle("&bSoft Landing", "&7Fall damage reduced!", 5, 30, 5);
 
         long base = (long) getDouble("softlanding", "cooldown", 10);
         long cd = Math.max(2, base - (lvl - 1));
@@ -216,6 +247,137 @@ public class PassivePerkManager {
 
         return newDamage;
     }
+
+    // ---------------------------------------------------------------
+    // EAGLE SIGHT – highlight nearby entities
+    // ---------------------------------------------------------------
+
+    public boolean canTriggerEagleSight(Player p) {
+        long now = System.currentTimeMillis();
+        long until = eagleCooldown.getOrDefault(p.getUniqueId(), 0L);
+        return now >= until;
+    }
+
+    public void triggerEagleSight(Player p) {
+        int lvl = getLevel(p, PassivePerkType.EAGLE_SIGHT, 1);
+
+        double radius = getDouble("eaglesight", "radius", 12.0) + (lvl - 1);
+        int glowTicks = getInt("eaglesight", "glow-ticks", 40);
+
+        for (Entity ent : p.getNearbyEntities(radius, radius, radius)) {
+            if (ent instanceof LivingEntity living && ent != p) {
+                living.setGlowing(true);
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                    if (living.isValid()) living.setGlowing(false);
+                }, glowTicks);
+            }
+        }
+
+        String msg = getString("eaglesight", "message",
+                "&dArcane&7» &fYour &nEagle Sight&f sharpens.");
+        p.sendMessage(msg);
+
+        long base = (long) getDouble("eaglesight", "cooldown", 15);
+        long cd = Math.max(3, base - (lvl - 1));
+        eagleCooldown.put(p.getUniqueId(), System.currentTimeMillis() + cd * 1000L);
+    }
+
+    // ---------------------------------------------------------------
+    // SIXTH SENSE – warning when targeted
+    // ---------------------------------------------------------------
+
+    public boolean canTriggerSixthSense(Player p) {
+        long now = System.currentTimeMillis();
+        long until = sixthCooldown.getOrDefault(p.getUniqueId(), 0L);
+        return now >= until;
+    }
+
+    public void triggerSixthSense(Player p, Entity mob) {
+        String msg = getString("sixthsense", "message",
+                "&dArcane&7» &fYou feel something watching you...");
+        p.sendMessage(msg);
+        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BIT, 1.0f, 1.4f);
+
+        long base = (long) getDouble("sixthsense", "cooldown", 8);
+        int lvl = getLevel(p, PassivePerkType.SIXTH_SENSE, 1);
+        long cd = Math.max(2, base - (lvl - 1));
+        sixthCooldown.put(p.getUniqueId(), System.currentTimeMillis() + cd * 1000L);
+    }
+
+    // ---------------------------------------------------------------
+    // NIGHT INSTINCT – weak NV only in darkness
+    // ---------------------------------------------------------------
+
+    public int getNightInstinctLightLevel() {
+        return getInt("nightinstinct", "light-level", 7);
+    }
+
+    public int getNightInstinctDurationSeconds() {
+        return getInt("nightinstinct", "duration", 10);
+    }
+
+    public void maybeApplyNightInstinct(Player p) {
+        int threshold = getNightInstinctLightLevel();
+        if (p.getLocation().getBlock().getLightLevel() > threshold) return;
+
+        int lvl = getLevel(p, PassivePerkType.NIGHT_INSTINCT, 1);
+        int seconds = getNightInstinctDurationSeconds() + (lvl - 1) * 2;
+        int newDur = seconds * 20;
+
+        PotionEffect existing = p.getPotionEffect(PotionEffectType.NIGHT_VISION);
+        if (existing != null && existing.getDuration() > newDur / 2) return;
+
+        p.addPotionEffect(new PotionEffect(
+                PotionEffectType.NIGHT_VISION,
+                newDur,
+                0,
+                true,
+                false,
+                false
+        ));
+    }
+
+    // ---------------------------------------------------------------
+    // CRITICAL MIND – chance to convert hit into “critical style” hit
+    // ---------------------------------------------------------------
+
+    public double getCriticalChance(Player p) {
+        int lvl = getLevel(p, PassivePerkType.CRITICAL_MIND, 1);
+        double base = getDouble("criticalmind", "base-chance", 0.05);
+        double per = getDouble("criticalmind", "per-level", 0.02);
+        double max = getDouble("criticalmind", "max-chance", 0.40);
+        double chance = base + (lvl - 1) * per;
+        if (chance > max) chance = max;
+        return chance;
+    }
+
+    public boolean rollCriticalMind(Player p) {
+        double chance = getCriticalChance(p);
+        return random.nextDouble() < chance;
+    }
+
+    // ---------------------------------------------------------------
+    // FOCUS – projectile speed multiplier
+    // ---------------------------------------------------------------
+
+    public double getFocusVelocityMultiplier(Player p) {
+        int lvl = getLevel(p, PassivePerkType.FOCUS, 1);
+        double base = getDouble("focus", "base-multiplier", 0.05);
+        double per = getDouble("focus", "per-level", 0.02);
+        double max = getDouble("focus", "max-multiplier", 0.50);
+        double mult = base + (lvl - 1) * per;
+        if (mult > max) mult = max;
+        if (mult < 0) mult = 0;
+        return mult;
+    }
+
+    public boolean isEnabled(Player p, PassivePerkType type) {
+
+    }
+
+    public void setEnabled(Player p, PassivePerkType target, boolean b) {
+    }
+
 
     // ---------------------------------------------------------------
     // DATA CLASS

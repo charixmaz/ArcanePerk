@@ -82,3 +82,14 @@ permissions:
   arcaneperks.admin.nocooldown:
     default: op
     description: Bypass perk cooldowns (for testing).
+
+    commands:
+      arcane:
+        description: Open Arcane hub GUI
+        usage: /arcane
+        permission: arcaneperks.command.arcane
+        aliases: [arcanegui]
+      AP:
+        description: Arcane main command
+        usage: /ap
+

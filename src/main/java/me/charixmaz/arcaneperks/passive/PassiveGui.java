@@ -23,144 +23,99 @@ public class PassiveGui {
         this.manager = manager;
     }
 
-    private String cc(String s) {
-        return ChatColor.translateAlternateColorCodes('&', s);
-    }
-
-    // ---------------------------------------------------------------------
-    // ROOT ANATOMY GUI
-    // ---------------------------------------------------------------------
+    // ----- root GUI (Head / Torso / Legs / Feet buttons) -----
 
     public void openRoot(Player p) {
         Inventory inv = Bukkit.createInventory(
-                new PassiveGuiHolder(PassiveGuiHolder.GuiType.ROOT),
+                new PassiveGuiHolder(PassiveGuiHolder.GuiType.ROOT, null),
                 27,
-                cc("&5&lArcane Anatomy")
+                color("&5Arcane &7» &dPassive Perks")
         );
 
-        // Simple layout: put categories in row 2
-        setCategory(inv, 10, PassiveCategory.HEAD);
-        setCategory(inv, 12, PassiveCategory.TORSO);
-        setCategory(inv, 14, PassiveCategory.LEGS);
-        setCategory(inv, 16, PassiveCategory.FEET);
+        inv.setItem(10, categoryItem(Material.PLAYER_HEAD, "&eHead Perks", "&7Vision, awareness, precision"));
+        inv.setItem(12, categoryItem(Material.LEATHER_CHESTPLATE, "&aTorso Perks", "&7Vitality, defense, regen"));
+        inv.setItem(14, categoryItem(Material.LEATHER_LEGGINGS, "&bLegs Perks", "&7Mobility, agility"));
+        inv.setItem(16, categoryItem(Material.LEATHER_BOOTS, "&dFeet Perks", "&7Ground control, movement"));
 
         p.openInventory(inv);
     }
 
-    private void setCategory(Inventory inv, int slot, PassiveCategory cat) {
-        ItemStack item = new ItemStack(cat.getIcon());
-        ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(cc("&d" + cat.getDisplayName()));
-        List<String> lore = new ArrayList<>();
-        lore.add(cc("&7" + cat.getDescription()));
-        lore.add("");
-        lore.add(cc("&eClick to view perks"));
-        meta.setLore(lore);
-        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-        item.setItemMeta(meta);
-        inv.setItem(slot, item);
-    }
-
-    // ---------------------------------------------------------------------
-    // CATEGORY GUI
-    // ---------------------------------------------------------------------
+    // ----- category GUI -----
 
     public void openCategory(Player p, PassiveCategory cat) {
         Inventory inv = Bukkit.createInventory(
                 new PassiveGuiHolder(PassiveGuiHolder.GuiType.CATEGORY, cat),
                 27,
-                cc("&5Arcane &7- &d" + cat.getDisplayName())
+                color("&5Arcane &7» &d" + cat.getDisplayName())
         );
 
-        // Map existing perks into categories
-        // You can move these around later or add more
         switch (cat) {
             case HEAD -> {
-                // no perks yet
+                setPerkItem(inv, 10, PassivePerkType.EAGLE_SIGHT, p);
+                setPerkItem(inv, 12, PassivePerkType.SIXTH_SENSE, p);
+                setPerkItem(inv, 14, PassivePerkType.CRITICAL_MIND, p);
+                setPerkItem(inv, 16, PassivePerkType.FOCUS, p);
             }
             case TORSO -> {
-                // Adrenaline
-                setPerkItem(inv, 11, PassivePerkType.ADRENALINE, p);
+                setPerkItem(inv, 10, PassivePerkType.ADRENALINE, p);
+                setPerkItem(inv, 12, PassivePerkType.IRON_SKIN, p);
+                setPerkItem(inv, 14, PassivePerkType.FIRE_HEART, p);
+                setPerkItem(inv, 16, PassivePerkType.METABOLIC_RECOVERY, p);
             }
             case LEGS -> {
-                // Soft Landing
-                setPerkItem(inv, 13, PassivePerkType.SOFT_LANDING, p);
+                setPerkItem(inv, 10, PassivePerkType.SOFT_LANDING, p);
+                setPerkItem(inv, 12, PassivePerkType.CLIMBERS_GRIP, p);
+                setPerkItem(inv, 14, PassivePerkType.MOMENTUM, p);
+                setPerkItem(inv, 16, PassivePerkType.STEP_ASSIST, p);
             }
             case FEET -> {
-                // Swift Step
-                setPerkItem(inv, 15, PassivePerkType.SWIFT_STEP, p);
+                setPerkItem(inv, 10, PassivePerkType.SWIFT_SPEED, p);
+                setPerkItem(inv, 12, PassivePerkType.SILENT_STEPS, p);
+                setPerkItem(inv, 14, PassivePerkType.PATHFINDER, p);
+                setPerkItem(inv, 16, PassivePerkType.PREDATORS_TREAD, p);
             }
         }
-
-        // Add a "back" button
-        ItemStack back = new ItemStack(Material.ARROW);
-        ItemMeta bm = back.getItemMeta();
-        bm.setDisplayName(cc("&cBack"));
-        back.setItemMeta(bm);
-        inv.setItem(18, back);
 
         p.openInventory(inv);
     }
 
-    private void setPerkItem(Inventory inv, int slot, PassivePerkType perk, Player p) {
-        boolean has = switch (perk) {
-            case SWIFT_STEP -> manager.hasSwiftStep(p);
-            case ADRENALINE -> manager.hasAdrenaline(p);
-            case SOFT_LANDING -> manager.hasSoftLanding(p);
-        };
+    // ----- helpers -----
 
-        int level = manager.getLevel(p, perk, 0); // 0 -> will display "Locked" if no perm
-
-        Material mat;
-        String name;
-        String desc;
-
-        switch (perk) {
-            case SWIFT_STEP -> {
-                mat = Material.LEATHER_BOOTS;
-                name = "Swift Step";
-                desc = "Occasional speed burst while walking.";
-            }
-            case ADRENALINE -> {
-                mat = Material.REDSTONE;
-                name = "Adrenaline";
-                desc = "Heal when close to death.";
-            }
-            case SOFT_LANDING -> {
-                mat = Material.SLIME_BLOCK;
-                name = "Soft Landing";
-                desc = "Reduced fall damage.";
-            }
-            default -> {
-                mat = Material.BARRIER;
-                name = perk.name();
-                desc = "Passive perk.";
-            }
-        }
-
+    private ItemStack categoryItem(Material mat, String name, String loreLine) {
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(cc((has ? "&a" : "&c") + name));
+        if (meta != null) {
+            meta.setDisplayName(color(name));
+            List<String> lore = new ArrayList<>();
+            lore.add(color(loreLine));
+            meta.setLore(lore);
+            meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    public void setPerkItem(Inventory inv, int slot, PassivePerkType type, Player p) {
+        ItemStack item = new ItemStack(Material.ENCHANTED_BOOK);
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+
+        int level = manager.getLevel(p, type);
+        boolean enabled = manager.isEnabled(p, type);
+
+        meta.setDisplayName(color(type.getDisplayName() + " &7[Lv." + level + "]"));
 
         List<String> lore = new ArrayList<>();
-        lore.add(cc("&7" + desc));
-        lore.add("");
-
-        if (has) {
-            lore.add(cc("&aUnlocked"));
-            lore.add(cc("&7Level: &f" + level));
-            lore.add("");
-            lore.add(cc("&8(Unlock system: via LuckPerms perms)"));
-        } else {
-            lore.add(cc("&cLocked"));
-            lore.add(cc("&7Requires permission:"));
-            lore.add(cc("&f" + perk.getPermPrefix() + ".x"));
-        }
-
+        lore.add(color(enabled ? "&aActive" : "&cInactive"));
+        lore.add(color("&7Click to toggle"));
         meta.setLore(lore);
-        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
         item.setItemMeta(meta);
 
         inv.setItem(slot, item);
+    }
+
+    private String color(String s) {
+        return ChatColor.translateAlternateColorCodes('&', s);
     }
 }
